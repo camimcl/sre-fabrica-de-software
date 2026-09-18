@@ -1,0 +1,98 @@
+classDiagram
+    direction LR
+    class User {
+      +UUID id
+      +string full_name
+      +string email
+      +UserRole role
+    }
+    class Project {
+      +UUID id
+      +string name
+      +UUID owner_id
+    }
+    class Endpoint {
+      +UUID id
+      +string base_url
+      +bool authorization_confirmed
+    }
+    class TestScenario {
+      +UUID id
+      +int duration_seconds
+      +int initial_concurrency
+      +int max_concurrency
+      +ControlStrategy strategy
+    }
+    class TestExecution {
+      +UUID id
+      +ExecutionStatus status
+      +start()
+      +cancel(reason)
+    }
+    class MetricWindow {
+      +int sequence_number
+      +float throughput_rps
+      +float latency_p95_ms
+      +float error_rate
+    }
+    class ModelVersion {
+      +string version
+      +string algorithm
+      +ModelStatus status
+    }
+    class RiskPrediction {
+      +float risk_probability
+      +bool predicted_degradation
+      +int inference_latency_ms
+    }
+    class ControlDecision {
+      +ControlAction action
+      +int previous_concurrency
+      +int next_concurrency
+      +string reason
+    }
+    class ExecutionReport {
+      +int total_requests
+      +float average_throughput_rps
+      +float final_error_rate
+    }
+    class RiskPredictor {
+      <<interface>>
+      +predict_risk(features) RiskPredictionResult
+    }
+    class SklearnRiskPredictor {
+      +predict_risk(features) RiskPredictionResult
+    }
+    class ConcurrencyController {
+      <<interface>>
+      +decide(input) ControlDecisionResult
+    }
+    class RulesController {
+      +decide(input) ControlDecisionResult
+    }
+    class AdaptiveLoadController {
+      +decide(input) ControlDecisionResult
+    }
+    class MetricsAggregator {
+      +aggregate(observations) MetricWindow
+    }
+    class ExecutionCoordinator {
+      +run(execution)
+      +apply(decision)
+    }
+
+    User "1" --> "0..*" Project : possui
+    Project "1" --> "1..*" Endpoint : contém
+    Endpoint "1" --> "0..*" TestScenario : configura
+    TestScenario "1" --> "0..*" TestExecution : origina
+    TestExecution "1" --> "1..*" MetricWindow : registra
+    MetricWindow "1" --> "0..1" RiskPrediction : recebe
+    MetricWindow "1" --> "1" ControlDecision : produz
+    ModelVersion "1" --> "0..*" RiskPrediction : gera
+    TestExecution "1" --> "0..1" ExecutionReport : consolida
+    RiskPredictor <|.. SklearnRiskPredictor
+    ConcurrencyController <|.. RulesController
+    ConcurrencyController <|.. AdaptiveLoadController
+    ExecutionCoordinator --> MetricsAggregator
+    ExecutionCoordinator --> RiskPredictor
+    ExecutionCoordinator --> ConcurrencyController

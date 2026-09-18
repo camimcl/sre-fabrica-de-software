@@ -1,0 +1,78 @@
+erDiagram
+    direction LR
+    USER ||--o{ PROJECT : possui
+    PROJECT ||--o{ ENDPOINT : contem
+    PROJECT ||--o{ TEST_SCENARIO : organiza
+    ENDPOINT ||--o{ TEST_SCENARIO : configura
+    USER ||--o{ TEST_SCENARIO : cria
+    TEST_SCENARIO ||--o{ TEST_EXECUTION : origina
+    USER ||--o{ TEST_EXECUTION : inicia
+    MODEL_VERSION o|--o{ TEST_EXECUTION : habilita
+    TEST_EXECUTION ||--o{ METRIC_WINDOW : registra
+    MODEL_VERSION ||--o{ RISK_PREDICTION : gera
+    METRIC_WINDOW ||--o| RISK_PREDICTION : recebe
+    METRIC_WINDOW ||--o| CONTROL_DECISION : produz
+    RISK_PREDICTION o|--o| CONTROL_DECISION : subsidia
+    TEST_EXECUTION ||--o| EXECUTION_REPORT : consolida
+
+    USER {
+      uuid id PK
+      string email UK
+      string role
+    }
+    PROJECT {
+      uuid id PK
+      uuid owner_id FK
+      string name
+    }
+    ENDPOINT {
+      uuid id PK
+      uuid project_id FK
+      string base_url
+      boolean authorization_confirmed
+    }
+    TEST_SCENARIO {
+      uuid id PK
+      uuid project_id FK
+      uuid endpoint_id FK
+      string strategy
+    }
+    TEST_EXECUTION {
+      uuid id PK
+      uuid scenario_id FK
+      uuid model_version_id FK
+      string status
+    }
+    METRIC_WINDOW {
+      uuid id PK
+      uuid execution_id FK
+      int sequence_number UK
+      decimal throughput_rps
+      decimal latency_p95_ms
+      decimal error_rate
+    }
+    MODEL_VERSION {
+      uuid id PK
+      string version UK
+      string algorithm
+      string status
+    }
+    RISK_PREDICTION {
+      uuid id PK
+      uuid metric_window_id FK
+      uuid model_version_id FK
+      decimal risk_probability
+    }
+    CONTROL_DECISION {
+      uuid id PK
+      uuid metric_window_id FK
+      uuid risk_prediction_id FK
+      string action
+      int next_concurrency
+    }
+    EXECUTION_REPORT {
+      uuid id PK
+      uuid execution_id FK
+      int total_requests
+      decimal final_error_rate
+    }

@@ -68,6 +68,8 @@ API FastAPI
 
 Essa arquitetura mantém as responsabilidades separadas por módulos, mas evita a complexidade operacional de microserviços, filas distribuídas e aceleração especializada antes que o fluxo principal esteja validado.
 
+Os diagramas técnicos foram organizados com um caminho principal da esquerda para a direita e desdobramentos abaixo da entidade de origem. Para evitar linhas sobrepostas, referências secundárias aparecem como atributos UUID ou chaves estrangeiras dentro das tabelas. O [guia de leitura](docs/diagrams/README.md) reúne as convenções, as fontes editáveis e as exportações oficiais.
+
 ## Tecnologias previstas
 
 | Camada | Tecnologia | Responsabilidade |
@@ -110,16 +112,45 @@ docs/
   architecture/
   diagrams/
   prototypes/
-  superpowers/specs/
+  relatorio-sprint-02.md
 docker-compose.yml
 .env.example
 ```
 
-## Situação da Sprint 02
+## Sprint 02
 
-Nesta Sprint serão entregues a arquitetura, o diagrama de classes, o modelo entidade-relacionamento, o modelo relacional, os protótipos das telas principais, o esquema inicial do PostgreSQL e a estrutura organizada do projeto. Os protótipos representam o produto completo planejado, mas não equivalem a uma interface funcional nesta etapa.
+A arquitetura, os modelos, o esquema inicial do PostgreSQL e o protótipo das telas estão consolidados no [Relatório Técnico da Sprint 02](docs/relatorio-sprint-02.md). As fontes editáveis e as imagens dos diagramas ficam em [`docs/diagrams`](docs/diagrams/README.md).
 
-A especificação técnica aprovada está em `docs/superpowers/specs/2026-09-17-sprint-02-foundation-design.md`.
+O protótipo editável está no [Figma — LoadForge Sprint 02](https://www.figma.com/design/isw6HZdCiomQvSekNScl9J), com descrição e capturas em `docs/prototypes/`. Ele funciona como referência inicial para navegação e organização das informações; a interface poderá mudar durante a implementação e os testes de usabilidade.
+
+## Como criar o banco com Docker
+
+1. Copie `.env.example` para `.env`, defina uma senha local exclusiva em `POSTGRES_PASSWORD` e mantenha o arquivo fora do controle de versão. O Compose interrompe a inicialização se a senha estiver vazia.
+2. Inicie o PostgreSQL:
+
+   ```bash
+   docker compose up -d db
+   ```
+
+3. Crie ou atualize todas as tabelas com a migração versionada:
+
+   ```bash
+   docker compose --profile tools run --rm migrate
+   ```
+
+4. Confira o estado dos serviços:
+
+   ```bash
+   docker compose ps
+   ```
+
+O volume nomeado `loadforge_pgdata` preserva os dados entre reinicializações. O serviço `migrate` é descartável: ele aguarda o banco ficar saudável, aplica o Alembic até a revisão mais recente e encerra. Assim, o esquema não depende de comandos SQL manuais e pode ser recriado de forma consistente por qualquer integrante. A porta do PostgreSQL fica limitada ao próprio computador (`127.0.0.1`), sem exposição direta à rede local.
+
+### Configuração sensível
+
+O repositório mantém somente exemplos vazios de configuração. Senhas, tokens, chaves privadas e arquivos `.env` devem permanecer apenas no ambiente local ou em um gerenciador de segredos. Ao executar o backend fora do Compose, `DATABASE_URL` também deve ser definida explicitamente; não existe credencial padrão no código nem na configuração do Alembic.
+
+Se o volume `loadforge_pgdata` já tiver sido inicializado com outra senha, alterar apenas o `.env` não modifica a credencial armazenada pelo PostgreSQL. Nesse caso, a senha do usuário deve ser rotacionada no banco existente ou, quando os dados forem descartáveis, o ambiente local pode ser recriado conscientemente.
 
 ## Segurança e uso responsável
 

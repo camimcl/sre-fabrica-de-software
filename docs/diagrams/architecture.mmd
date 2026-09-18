@@ -1,0 +1,28 @@
+flowchart TB
+    subgraph Access[1. Acesso e execução autorizada]
+        direction LR
+        User[Usuário QA ou Visualizador] -->|HTTPS| UI[Frontend React planejado]
+        UI -->|REST JSON| API[API FastAPI]
+        API -->|comando validado| Tests[Orquestrador de cenários]
+        Tests -->|HTTP controlado| Target[Aplicação autorizada]
+    end
+
+    subgraph Adaptive[2. Ciclo adaptativo]
+        direction RL
+        Target -->|respostas| Metrics[Métricas em janelas de 2 s]
+        Metrics --> Intelligence[IA local: risco em 10 s]
+        Intelligence --> Control[Controle híbrido]
+        Control -->|nova concorrência| Tests
+    end
+
+    subgraph Data[3. Dados e rastreabilidade]
+        direction LR
+        API --> Registry[Cadastros e autorizações]
+        Metrics --> Reports[Relatórios e histórico]
+        Intelligence --> Artifact[(Modelo local versionado)]
+        Registry --> DB[(PostgreSQL 16)]
+        Reports --> DB
+    end
+
+    note[Sem GPU, Redis, Celery, microserviços ou API externa de IA no MVP]
+    note -.-> Adaptive

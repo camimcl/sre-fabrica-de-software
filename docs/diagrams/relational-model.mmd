@@ -1,0 +1,92 @@
+erDiagram
+    direction LR
+    users ||--o{ projects : owner_id
+    projects ||--o{ endpoints : project_id
+    projects ||--o{ test_scenarios : project_id
+    endpoints ||--o{ test_scenarios : project_id_endpoint_id
+    users ||--o{ test_scenarios : created_by
+    test_scenarios ||--o{ test_executions : scenario_id
+    users ||--o{ test_executions : initiated_by
+    model_versions o|--o{ test_executions : model_version_id
+    test_executions ||--o{ metric_windows : execution_id
+    model_versions ||--o{ risk_predictions : model_version_id
+    metric_windows ||--o| risk_predictions : metric_window_id
+    metric_windows ||--o| control_decisions : metric_window_id
+    risk_predictions o|--o| control_decisions : risk_prediction_id
+    test_executions ||--o| execution_reports : execution_id
+
+    users {
+      UUID id PK
+      VARCHAR full_name
+      VARCHAR email UK
+      VARCHAR password_hash
+      user_role role
+      TIMESTAMPTZ created_at
+    }
+    projects {
+      UUID id PK
+      UUID owner_id FK
+      VARCHAR name
+      TEXT description
+    }
+    endpoints {
+      UUID id PK
+      UUID project_id FK
+      VARCHAR base_url
+      VARCHAR http_method
+      BOOLEAN authorization_confirmed
+    }
+    test_scenarios {
+      UUID id PK
+      UUID project_id FK
+      UUID endpoint_id FK
+      UUID created_by FK
+      INTEGER duration_seconds
+      INTEGER max_concurrency
+      control_strategy strategy
+    }
+    test_executions {
+      UUID id PK
+      UUID scenario_id FK
+      UUID initiated_by FK
+      UUID model_version_id FK
+      execution_status status
+      control_strategy strategy
+    }
+    metric_windows {
+      UUID id PK
+      UUID execution_id FK
+      INTEGER sequence_number UK
+      NUMERIC throughput_rps
+      NUMERIC latency_p95_ms
+      NUMERIC error_rate
+    }
+    model_versions {
+      UUID id PK
+      VARCHAR version UK
+      VARCHAR algorithm
+      model_status status
+      NUMERIC f1_score
+    }
+    risk_predictions {
+      UUID id PK
+      UUID metric_window_id FK_UK
+      UUID model_version_id FK
+      NUMERIC risk_probability
+      INTEGER inference_latency_ms
+    }
+    control_decisions {
+      UUID id PK
+      UUID metric_window_id FK_UK
+      UUID risk_prediction_id FK_UK
+      control_action action
+      INTEGER next_concurrency
+      TEXT reason
+    }
+    execution_reports {
+      UUID id PK
+      UUID execution_id FK_UK
+      INTEGER total_requests
+      NUMERIC average_throughput_rps
+      NUMERIC final_error_rate
+    }
