@@ -70,20 +70,20 @@ Essa arquitetura mantém as responsabilidades separadas por módulos, mas evita 
 
 Os diagramas técnicos foram organizados com um caminho principal da esquerda para a direita e desdobramentos abaixo da entidade de origem. Para evitar linhas sobrepostas, referências secundárias aparecem como atributos UUID ou chaves estrangeiras dentro das tabelas. O [guia de leitura](docs/diagrams/README.md) reúne as convenções, as fontes editáveis e as exportações oficiais.
 
-## Tecnologias previstas
+## Tecnologias
 
 | Camada | Tecnologia | Responsabilidade |
 |---|---|---|
-| Frontend | React, Vite e TypeScript | Protótipos navegáveis e futura interface web |
+| Frontend | React, Vite e TypeScript | Login, usuários, projetos e endpoints |
 | Backend | Python 3.11 e FastAPI | Regras da aplicação e interface HTTP |
 | Persistência | PostgreSQL 16 | Usuários, projetos, cenários, execuções, métricas, modelos e decisões |
 | Mapeamento e migrations | SQLAlchemy 2 e Alembic | Modelo relacional e evolução do esquema |
 | Motor de carga | Python asyncio e httpx | Requisições concorrentes com limites e cancelamento |
 | IA local | scikit-learn e joblib | Treinamento, avaliação, versionamento e inferência |
-| Ambiente | Docker Compose | API, banco e ferramentas de desenvolvimento |
+| Ambiente | Docker Compose | Frontend, API, migrations e banco local |
 | Testes | pytest | Validação dos módulos e do fluxo integrado |
 
-## Estrutura prevista do repositório
+## Estrutura do repositório
 
 ```text
 backend/
@@ -123,32 +123,69 @@ A arquitetura, os modelos, o esquema inicial do PostgreSQL e o protótipo das te
 
 O protótipo editável está no [Figma — LoadForge Sprint 02](https://www.figma.com/design/isw6HZdCiomQvSekNScl9J), com descrição e capturas em `docs/prototypes/`. Ele funciona como referência inicial para navegação e organização das informações; a interface poderá mudar durante a implementação e os testes de usabilidade.
 
-## Como criar o banco com Docker
+## Sprint 03
 
-1. Copie `.env.example` para `.env`, defina uma senha local exclusiva em `POSTGRES_PASSWORD` e mantenha o arquivo fora do controle de versão. O Compose interrompe a inicialização se a senha estiver vazia.
-2. Inicie o PostgreSQL:
+A aplicação possui um primeiro fluxo executável com banco conectado, cadastro, login, perfis QA e Visualizador e CRUD persistido de projetos e endpoints. A interface React consome a API FastAPI, e as regras de acesso são aplicadas no backend. Consulte o [Relatório Técnico da Sprint 03](docs/relatorio-sprint-03.md) para a arquitetura executável e as evidências de cada requisito.
+
+## Como executar localmente com Docker
+
+1. Copie `.env.example` para `.env`.
+2. Defina valores locais fortes e exclusivos para `POSTGRES_PASSWORD` e `LOADFORGE_TOKEN_SECRET`. A chave de token deve ter ao menos 32 caracteres. Mantenha o `.env` fora do controle de versão.
+3. Inicie o ambiente:
 
    ```bash
-   docker compose up -d db
+   docker compose up --build -d
    ```
 
-3. Crie ou atualize todas as tabelas com a migração versionada:
+   A API aguarda o banco, aplica as migrations e inicia. O frontend aguarda a API ficar saudável.
+
+4. Crie a primeira conta QA. A senha é digitada de forma interativa e não aparece no histórico do terminal:
 
    ```bash
-   docker compose --profile tools run --rm migrate
+   docker compose exec api python -m app.cli create-qa --name "Nome do QA" --email "qa@exemplo.com"
    ```
 
-4. Confira o estado dos serviços:
+5. Abra `http://127.0.0.1:5173` e entre com a conta criada. A documentação interativa da API fica em `http://127.0.0.1:8000/docs`.
+6. Confira o estado dos serviços:
 
    ```bash
    docker compose ps
    ```
 
-O volume nomeado `loadforge_pgdata` preserva os dados entre reinicializações. O serviço `migrate` é descartável: ele aguarda o banco ficar saudável, aplica o Alembic até a revisão mais recente e encerra. Assim, o esquema não depende de comandos SQL manuais e pode ser recriado de forma consistente por qualquer integrante. A porta do PostgreSQL fica limitada ao próprio computador (`127.0.0.1`), sem exposição direta à rede local.
+7. Para encerrar sem apagar os dados:
+
+   ```bash
+   docker compose down
+   ```
+
+O volume nomeado `loadforge_pgdata` preserva os dados entre reinicializações. O serviço opcional `migrate` também permite aplicar as migrations isoladamente com `docker compose --profile tools run --rm migrate`. A porta do PostgreSQL fica limitada ao próprio computador (`127.0.0.1`).
+
+### Rotas principais
+
+| Método e rota | Acesso | Finalidade |
+|---|---|---|
+| `GET /health/ready` | Público | Confirma a conexão real com o banco. |
+| `POST /auth/register` | Público | Cria uma conta Visualizador. |
+| `POST /auth/login` | Público | Autentica por e-mail e senha. |
+| `GET /auth/me` | Autenticado | Consulta o perfil da sessão. |
+| `GET /users` e `POST /users` | QA | Lista e cria usuários. |
+| `/projects` | Autenticado/QA | Consulta para ambos; mutações para QA. |
+| `/projects/{id}/endpoints` | Autenticado/QA | Consulta para ambos; mutações pelo QA proprietário. |
+
+### Testes
+
+No diretório do backend, instale as dependências de desenvolvimento e execute:
+
+```bash
+python -m pip install -e ".[dev]"
+pytest -q
+```
+
+O teste com PostgreSQL requer um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele.
 
 ### Configuração sensível
 
-O repositório mantém somente exemplos vazios de configuração. Senhas, tokens, chaves privadas e arquivos `.env` devem permanecer apenas no ambiente local ou em um gerenciador de segredos. Ao executar o backend fora do Compose, `DATABASE_URL` também deve ser definida explicitamente; não existe credencial padrão no código nem na configuração do Alembic.
+O repositório mantém somente exemplos vazios de configuração. Senhas, tokens, chaves privadas e arquivos `.env` devem permanecer apenas no ambiente local ou em um gerenciador de segredos. Ao executar o backend fora do Compose, defina `DATABASE_URL` ou todos os componentes `POSTGRES_*`; não existe credencial padrão no código nem na configuração do Alembic.
 
 Se o volume `loadforge_pgdata` já tiver sido inicializado com outra senha, alterar apenas o `.env` não modifica a credencial armazenada pelo PostgreSQL. Nesse caso, a senha do usuário deve ser rotacionada no banco existente ou, quando os dados forem descartáveis, o ambiente local pode ser recriado conscientemente.
 
