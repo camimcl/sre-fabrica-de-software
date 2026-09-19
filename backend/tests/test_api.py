@@ -219,3 +219,54 @@ def test_project_and_endpoint_crud_persists(api: tuple[TestClient, sessionmaker]
     assert client.delete(f"/projects/{project_id}/endpoints/{endpoint_id}", headers=qa).status_code == 204
     assert client.delete(f"/projects/{project_id}", headers=qa).status_code == 204
     assert client.get(f"/projects/{project_id}", headers=qa).status_code == 404
+
+
+def test_demote_qa_with_projects_blocked(api: tuple[TestClient, sessionmaker]) -> None:
+    """Demoting a QA who owns projects must be blocked (409).
+
+    Project edit/delete routes require QA role **and** ownership, so demoting
+    the owner would leave the projects unmanageable.
+    """
+    client, factory = api
+
+    # Create two QA users so the "last QA" guard does not interfere.
+    first_qa = _qa(factory, "first-qa@example.org")
+    second_qa = _qa(factory, "second-qa@example.org")
+    first_headers = _token(client, first_qa.email, "strong-password-123")
+    second_headers = _token(client, second_qa.email, "strong-password-123")
+
+    # second QA creates a project
+    project = client.post(
+        "/projects", json={"name": "Owned project"}, headers=second_headers
+    )
+    assert project.status_code == 201, project.text
+    project_id = project.json()["id"]
+
+    # Attempt to demote second QA → VIEWER while they own a project → 409
+    demote = client.put(
+        f"/users/{second_qa.id}",
+        json={
+            "full_name": second_qa.full_name,
+            "email": second_qa.email,
+            "password": None,
+            "role": "VIEWER",
+        },
+        headers=first_headers,
+    )
+    assert demote.status_code == 409, demote.text
+    assert "projects" in demote.json()["detail"].lower()
+
+    # After removing the project, demotion succeeds
+    assert client.delete(f"/projects/{project_id}", headers=second_headers).status_code == 204
+    demote_ok = client.put(
+        f"/users/{second_qa.id}",
+        json={
+            "full_name": second_qa.full_name,
+            "email": second_qa.email,
+            "password": None,
+            "role": "VIEWER",
+        },
+        headers=first_headers,
+    )
+    assert demote_ok.status_code == 200, demote_ok.text
+    assert demote_ok.json()["role"] == "VIEWER"

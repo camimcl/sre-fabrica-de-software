@@ -6,6 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.modules.projects.models import Project
+
 from app.core.security import (
     TOKEN_LIFETIME_SECONDS,
     create_access_token,
@@ -97,6 +99,30 @@ def _ensure_qa_remains(
         )
 
 
+def _ensure_no_orphan_projects(
+    db: Session, target: User, next_role: UserRole
+) -> None:
+    """Block role demotion from QA when the user still owns projects.
+
+    Project edit/delete routes require both QA role **and** ownership.
+    Demoting the owner to VIEWER would leave those projects without anyone
+    able to manage them.  The caller must transfer or remove the projects
+    before changing the role.
+    """
+    if target.role != UserRole.QA or next_role == UserRole.QA:
+        return
+    project_count = db.scalar(
+        select(func.count())
+        .select_from(Project)
+        .where(Project.owner_id == target.id)
+    )
+    if project_count:
+        raise HTTPException(
+            status_code=409,
+            detail="Transfer or remove the user's projects before demoting from QA",
+        )
+
+
 @router.post("/auth/register", response_model=UserResponse, status_code=201)
 def register(request: RegisterRequest, db: Session = Depends(get_db)) -> User:
     return _create_user(db, request, UserRole.VIEWER)
@@ -144,9 +170,13 @@ def update_user(
     if actor.role != UserRole.QA and request.role != target.role:
         raise HTTPException(status_code=403, detail="Only QA can change user roles")
     _ensure_qa_remains(db, target, request.role)
+    _ensure_no_orphan_projects(db, target, request.role)
 
     target.full_name = request.full_name
     target.email = str(request.email).lower()
+    # NOTE: role demotion is guarded by _ensure_no_orphan_projects above.
+    # Demoting a QA who owns projects would leave them unmanageable because
+    # project edit/delete require both QA role AND ownership.
     target.role = request.role
     if request.password:
         target.password_hash = hash_password(request.password)
