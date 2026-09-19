@@ -25,6 +25,7 @@ type EndpointForm = {
   authorization_confirmed: boolean
   authorization_evidence: string
 }
+type UserForm = { full_name: string; email: string; password: string; role: Role }
 
 const blankProject: ProjectForm = { name: '', description: '' }
 const blankEndpoint: EndpointForm = {
@@ -34,6 +35,7 @@ const blankEndpoint: EndpointForm = {
   authorization_confirmed: false,
   authorization_evidence: '',
 }
+const blankUser: UserForm = { full_name: '', email: '', password: '', role: 'VIEWER' }
 
 async function api<T>(path: string, method = 'GET', body?: unknown, token?: string): Promise<T> {
   const response = await fetch(`/api${path}`, {
@@ -65,11 +67,13 @@ export default function App() {
   const [endpointForm, setEndpointForm] = useState<EndpointForm>(blankEndpoint)
   const [editingEndpoint, setEditingEndpoint] = useState<string | null>(null)
   const [users, setUsers] = useState<User[]>([])
-  const [newUser, setNewUser] = useState({ full_name: '', email: '', password: '', role: 'VIEWER' as Role })
+  const [userForm, setUserForm] = useState<UserForm>(blankUser)
+  const [editingUser, setEditingUser] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
 
   const selectedProject = projects.find((project) => project.id === selectedId)
   const canEdit = user?.role === 'QA' && selectedProject?.owner_id === user.id
+  const qaCount = users.filter((entry) => entry.role === 'QA').length
 
   function report(error: unknown) {
     setNotice(error instanceof Error ? error.message : 'Ocorreu um erro inesperado.')
@@ -85,6 +89,14 @@ export default function App() {
     setEndpoints(await api<Endpoint[]>(`/projects/${projectId}/endpoints`, 'GET', undefined, accessToken))
   }
 
+  async function refreshUsers(accessToken: string, currentUser: User) {
+    if (currentUser.role === 'QA') {
+      setUsers(await api<User[]>('/users', 'GET', undefined, accessToken))
+      return
+    }
+    setUsers([await api<User>('/auth/me', 'GET', undefined, accessToken)])
+  }
+
   useEffect(() => {
     if (!token) return
     Promise.all([
@@ -96,6 +108,8 @@ export default function App() {
       setSelectedId(rows[0]?.id ?? null)
       if (currentUser.role === 'QA') {
         api<User[]>('/users', 'GET', undefined, token).then(setUsers).catch(report)
+      } else {
+        setUsers([currentUser])
       }
     }).catch((error) => {
       report(error)
@@ -139,6 +153,9 @@ export default function App() {
     setUser(null)
     setProjects([])
     setEndpoints([])
+    setUsers([])
+    setEditingUser(null)
+    setUserForm(blankUser)
     setNotice('Sessão encerrada neste navegador.')
   }
 
@@ -197,10 +214,66 @@ export default function App() {
   async function submitUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     try {
-      await api<User>('/users', 'POST', newUser, token)
-      setUsers(await api<User[]>('/users', 'GET', undefined, token))
-      setNewUser({ full_name: '', email: '', password: '', role: 'VIEWER' })
+      if (editingUser) {
+        const saved = await api<User>(`/users/${editingUser}`, 'PUT', {
+          ...userForm,
+          password: userForm.password || null,
+        }, token)
+        const currentUser = saved.id === user?.id ? saved : user
+        if (currentUser) {
+          setUser(currentUser)
+          await refreshUsers(token, currentUser)
+        }
+        setEditingUser(null)
+        setUserForm(blankUser)
+        setNotice('Usuário atualizado no banco de dados.')
+        return
+      }
+      await api<User>('/users', 'POST', userForm, token)
+      if (user) await refreshUsers(token, user)
+      setUserForm(blankUser)
       setNotice('Usuário criado no banco de dados.')
+    } catch (error) { report(error) }
+  }
+
+  function editUser(entry: User) {
+    setEditingUser(entry.id)
+    setUserForm({
+      full_name: entry.full_name,
+      email: entry.email,
+      password: '',
+      role: entry.role,
+    })
+  }
+
+  function cancelUserEdit() {
+    setEditingUser(null)
+    setUserForm(blankUser)
+  }
+
+  async function removeUser(entry: User) {
+    const ownAccount = entry.id === user?.id
+    const message = ownAccount
+      ? 'Excluir sua própria conta? Esta ação encerrará a sessão.'
+      : `Excluir o usuário “${entry.full_name}”?`
+    if (!window.confirm(message)) return
+    try {
+      await api<void>(`/users/${entry.id}`, 'DELETE', undefined, token)
+      if (ownAccount) {
+        sessionStorage.removeItem('loadforge-token')
+        setToken('')
+        setUser(null)
+        setProjects([])
+        setEndpoints([])
+        setUsers([])
+        setEditingUser(null)
+        setUserForm(blankUser)
+        setNotice('Conta excluída e sessão encerrada.')
+        return
+      }
+      if (user) await refreshUsers(token, user)
+      if (editingUser === entry.id) cancelUserEdit()
+      setNotice('Usuário excluído.')
     } catch (error) { report(error) }
   }
 
@@ -245,7 +318,51 @@ export default function App() {
               </> : <p className="empty">Selecione ou crie um projeto para visualizar os endpoints.</p>}
             </section>
           </div>
-          {user.role === 'QA' && <section className="card users-card"><div className="section-heading"><div><span className="eyebrow">Controle de acesso</span><h2>Usuários</h2></div><span>{users.length}</span></div><div className="users-layout"><div className="user-list">{users.map((entry) => <div className="user-item" key={entry.id}><div><strong>{entry.full_name}</strong><small>{entry.email}</small></div><span className="role-pill">{entry.role === 'QA' ? 'QA' : 'Visualizador'}</span></div>)}</div><form className="stack" onSubmit={submitUser}><h3>Novo usuário</h3><label>Nome completo<input required minLength={2} maxLength={160} value={newUser.full_name} onChange={(event) => setNewUser({ ...newUser, full_name: event.target.value })} /></label><label>E-mail<input required type="email" value={newUser.email} onChange={(event) => setNewUser({ ...newUser, email: event.target.value })} /></label><div className="form-row"><label>Senha inicial<input required type="password" minLength={12} value={newUser.password} onChange={(event) => setNewUser({ ...newUser, password: event.target.value })} /></label><label>Perfil<select value={newUser.role} onChange={(event) => setNewUser({ ...newUser, role: event.target.value as Role })}><option value="VIEWER">Visualizador</option><option value="QA">QA</option></select></label></div><button className="primary" type="submit">Criar usuário</button></form></div></section>}
+          <section className="card users-card">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">{user.role === 'QA' ? 'Controle de acesso' : 'Dados da conta'}</span>
+                <h2>{user.role === 'QA' ? 'Usuários' : 'Meu perfil'}</h2>
+              </div>
+              <span>{users.length}</span>
+            </div>
+            <div className="users-layout">
+              <div className="user-list">
+                {users.map((entry) => {
+                  const canManage = user.role === 'QA' || entry.id === user.id
+                  const lastQa = entry.role === 'QA' && qaCount === 1
+                  return <div className="user-item" key={entry.id}>
+                    <div className="user-summary">
+                      <div><strong>{entry.full_name}</strong><small>{entry.email}</small></div>
+                      <span className="role-pill">{entry.role === 'QA' ? 'QA' : 'Visualizador'}</span>
+                    </div>
+                    {canManage && <div className="actions user-actions">
+                      <button onClick={() => editUser(entry)}>Editar</button>
+                      <button
+                        className="danger"
+                        disabled={lastQa}
+                        title={lastQa ? 'O último QA não pode ser excluído' : undefined}
+                        onClick={() => removeUser(entry)}
+                      >Excluir</button>
+                    </div>}
+                  </div>
+                })}
+              </div>
+              {(user.role === 'QA' || editingUser) ? <form className="stack" onSubmit={submitUser}>
+                <h3>{editingUser ? 'Editar usuário' : 'Novo usuário'}</h3>
+                <label>Nome completo<input required minLength={2} maxLength={160} value={userForm.full_name} onChange={(event) => setUserForm({ ...userForm, full_name: event.target.value })} /></label>
+                <label>E-mail<input required type="email" value={userForm.email} onChange={(event) => setUserForm({ ...userForm, email: event.target.value })} /></label>
+                <div className="form-row">
+                  <label>{editingUser ? 'Nova senha (opcional)' : 'Senha inicial'}<input required={!editingUser} type="password" minLength={12} value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} /></label>
+                  <label>Perfil<select disabled={user.role !== 'QA'} value={userForm.role} onChange={(event) => setUserForm({ ...userForm, role: event.target.value as Role })}><option value="VIEWER">Visualizador</option><option value="QA">QA</option></select></label>
+                </div>
+                <div className="actions">
+                  <button className="primary" type="submit">{editingUser ? 'Salvar alterações' : 'Criar usuário'}</button>
+                  {editingUser && <button type="button" onClick={cancelUserEdit}>Cancelar</button>}
+                </div>
+              </form> : <p className="empty profile-help">Use o botão Editar para atualizar seu nome, e-mail ou senha.</p>}
+            </div>
+          </section>
         </main>
       )}
       {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label="Fechar aviso" onClick={() => setNotice('')}>×</button></div>}

@@ -67,9 +67,12 @@ textarea { min-height: 74px; resize: vertical; }
 .users-card { margin-top: 20px; }
 .users-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; margin-top: 22px; }
 .user-list { display: flex; flex-direction: column; gap: 8px; }
-.user-item { border-bottom: 1px solid #edf0ec; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 0; }
+.user-item { border-bottom: 1px solid #edf0ec; display: flex; flex-direction: column; gap: 10px; padding: 12px 0; }
+.user-summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.user-actions { justify-content: flex-end; }
 .user-item strong, .user-item small { display: block; }
 .user-item strong { font-size: 13px; margin-bottom: 3px; }
+.profile-help { margin: 0; align-self: start; }
 .notice { position: fixed; right: 22px; bottom: 22px; max-width: min(460px, calc(100vw - 44px)); display: flex; gap: 14px; align-items: center; background: #193c31; color: #fff; padding: 13px 17px; border-radius: 10px; box-shadow: 0 15px 35px rgba(0,0,0,.2); font-size: 13px; }
 .notice button { border: 0; background: none; color: #fff; font-size: 20px; }
 footer { text-align: center; padding: 22px; color: #a3ada5; font-size: 11px; }
