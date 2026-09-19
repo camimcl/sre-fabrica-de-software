@@ -125,7 +125,7 @@ O protótipo editável está no [Figma — LoadForge Sprint 02](https://www.figm
 
 ## Sprint 03
 
-A aplicação possui um primeiro fluxo executável com banco conectado, cadastro, login, perfis QA e Visualizador e CRUD persistido de projetos e endpoints. A interface React consome a API FastAPI, e as regras de acesso são aplicadas no backend. Consulte o [Relatório Técnico da Sprint 03](docs/relatorio-sprint-03.md) para a arquitetura executável e as evidências de cada requisito.
+A aplicação possui um primeiro fluxo executável com banco conectado, cadastro, login, perfis QA e Visualizador e CRUD persistido de usuários, projetos e endpoints. A interface React consome a API FastAPI, e as regras de acesso são aplicadas no backend. Cada usuário pode atualizar ou excluir a própria conta; o QA também gerencia outras contas. A aplicação preserva ao menos um QA e impede a exclusão de usuários com projetos ou execuções vinculados. Consulte o [Relatório Técnico da Sprint 03](docs/relatorio-sprint-03.md) para a arquitetura executável e as evidências de cada requisito.
 
 ## Como executar localmente com Docker
 
@@ -169,6 +169,7 @@ O volume nomeado `loadforge_pgdata` preserva os dados entre reinicializações. 
 | `POST /auth/login` | Público | Autentica por e-mail e senha. |
 | `GET /auth/me` | Autenticado | Consulta o perfil da sessão. |
 | `GET /users` e `POST /users` | QA | Lista e cria usuários. |
+| `PUT /users/{id}` e `DELETE /users/{id}` | Próprio usuário/QA | Atualiza ou exclui a própria conta; QA também gerencia outras contas. |
 | `/projects` | Autenticado/QA | Consulta para ambos; mutações para QA. |
 | `/projects/{id}/endpoints` | Autenticado/QA | Consulta para ambos; mutações pelo QA proprietário. |
 
