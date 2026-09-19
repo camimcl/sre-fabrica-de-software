@@ -26,6 +26,23 @@ class UserCreateRequest(RegisterRequest):
     role: UserRole = UserRole.VIEWER
 
 
+class UserUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str = Field(min_length=2, max_length=160)
+    email: EmailStr
+    password: str | None = Field(default=None, min_length=12, max_length=256)
+    role: UserRole
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise ValueError("Full name is required")
+        return cleaned
+
+
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

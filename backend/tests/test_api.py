@@ -94,6 +94,72 @@ def test_registration_login_and_roles(api: tuple[TestClient, sessionmaker]) -> N
     assert len(client.get("/users", headers=qa).json()) == 3
 
 
+def test_user_update_delete_and_permissions(api: tuple[TestClient, sessionmaker]) -> None:
+    client, factory = api
+    first_viewer = {
+        "full_name": "First Viewer",
+        "email": "first-viewer@example.org",
+        "password": "first-viewer-password-123",
+    }
+    second_viewer = {
+        "full_name": "Second Viewer",
+        "email": "second-viewer@example.org",
+        "password": "second-viewer-password-123",
+    }
+    first_id = client.post("/auth/register", json=first_viewer).json()["id"]
+    second_id = client.post("/auth/register", json=second_viewer).json()["id"]
+    viewer = _token(client, first_viewer["email"], first_viewer["password"])
+
+    self_update = {
+        "full_name": "Updated Viewer",
+        "email": "updated-viewer@example.org",
+        "password": "updated-viewer-password-123",
+        "role": "VIEWER",
+    }
+    updated = client.put(f"/users/{first_id}", json=self_update, headers=viewer)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["full_name"] == "Updated Viewer"
+    assert updated.json()["email"] == "updated-viewer@example.org"
+    assert _token(client, self_update["email"], self_update["password"])
+
+    escalation = client.put(
+        f"/users/{first_id}",
+        json={**self_update, "role": "QA"},
+        headers=viewer,
+    )
+    assert escalation.status_code == 403
+    assert client.put(
+        f"/users/{second_id}",
+        json={**second_viewer, "password": None, "role": "VIEWER"},
+        headers=viewer,
+    ).status_code == 403
+
+    qa_user = _qa(factory)
+    qa = _token(client, qa_user.email, "strong-password-123")
+    promoted = client.put(
+        f"/users/{second_id}",
+        json={**second_viewer, "password": None, "role": "QA"},
+        headers=qa,
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert promoted.json()["role"] == "QA"
+    second_qa = _token(client, second_viewer["email"], second_viewer["password"])
+    owned_project = client.post(
+        "/projects", json={"name": "Owned project"}, headers=second_qa
+    )
+    assert owned_project.status_code == 201, owned_project.text
+    assert client.delete(f"/users/{second_id}", headers=qa).status_code == 409
+    assert client.delete(
+        f"/projects/{owned_project.json()['id']}", headers=second_qa
+    ).status_code == 204
+    assert client.delete(f"/users/{second_id}", headers=qa).status_code == 204
+    assert client.delete(f"/users/{qa_user.id}", headers=qa).status_code == 409
+
+    refreshed_viewer = _token(client, self_update["email"], self_update["password"])
+    assert client.delete(f"/users/{first_id}", headers=refreshed_viewer).status_code == 204
+    assert client.get("/auth/me", headers=refreshed_viewer).status_code == 401
+
+
 def test_project_and_endpoint_crud_persists(api: tuple[TestClient, sessionmaker]) -> None:
     client, factory = api
     qa_user = _qa(factory)

@@ -1,6 +1,8 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,6 +22,7 @@ from app.modules.auth.schemas import (
     TokenResponse,
     UserCreateRequest,
     UserResponse,
+    UserUpdateRequest,
 )
 
 
@@ -65,6 +68,35 @@ def _create_user(db: Session, request: RegisterRequest, role: UserRole) -> User:
     return user
 
 
+def _user_or_404(db: Session, user_id: UUID) -> User:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+def _can_manage_user(actor: User, target: User) -> None:
+    if actor.role != UserRole.QA and actor.id != target.id:
+        raise HTTPException(status_code=403, detail="You can only manage your own profile")
+
+
+def _ensure_qa_remains(
+    db: Session, target: User, next_role: UserRole | None = None
+) -> None:
+    removes_qa = target.role == UserRole.QA and (
+        next_role is None or next_role != UserRole.QA
+    )
+    if not removes_qa:
+        return
+    qa_count = db.scalar(
+        select(func.count()).select_from(User).where(User.role == UserRole.QA)
+    )
+    if qa_count is not None and qa_count <= 1:
+        raise HTTPException(
+            status_code=409, detail="The last QA account cannot be removed"
+        )
+
+
 @router.post("/auth/register", response_model=UserResponse, status_code=201)
 def register(request: RegisterRequest, db: Session = Depends(get_db)) -> User:
     return _create_user(db, request, UserRole.VIEWER)
@@ -98,3 +130,50 @@ def create_user(
     db: Session = Depends(get_db),
 ) -> User:
     return _create_user(db, request, request.role)
+
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: UUID,
+    request: UserUpdateRequest,
+    actor: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    target = _user_or_404(db, user_id)
+    _can_manage_user(actor, target)
+    if actor.role != UserRole.QA and request.role != target.role:
+        raise HTTPException(status_code=403, detail="Only QA can change user roles")
+    _ensure_qa_remains(db, target, request.role)
+
+    target.full_name = request.full_name
+    target.email = str(request.email).lower()
+    target.role = request.role
+    if request.password:
+        target.password_hash = hash_password(request.password)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered") from exc
+    db.refresh(target)
+    return target
+
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(
+    user_id: UUID,
+    actor: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    target = _user_or_404(db, user_id)
+    _can_manage_user(actor, target)
+    _ensure_qa_remains(db, target)
+    db.delete(target)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Remove the user's projects and executions before deleting the account",
+        ) from exc
