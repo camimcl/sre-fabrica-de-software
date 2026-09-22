@@ -34,6 +34,12 @@ def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, sessionma
         with factory() as db:
             yield db
 
+    # Phase A tests exercise manual state transitions; disable the load engine
+    # so /start does not launch background traffic.
+    from app.modules.load_tests import api as load_tests_api
+
+    monkeypatch.setattr(load_tests_api, "ENGINE_ENABLED", False)
+
     app.dependency_overrides[get_db] = session_override
     with TestClient(app) as client:
         yield client, factory
