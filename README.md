@@ -172,6 +172,8 @@ O volume nomeado `loadforge_pgdata` preserva os dados entre reinicializações. 
 | `PUT /users/{id}` e `DELETE /users/{id}` | Próprio usuário/QA | Atualiza ou exclui a própria conta; QA também gerencia outras contas. |
 | `/projects` | Autenticado/QA | Consulta para ambos; mutações para QA. |
 | `/projects/{id}/endpoints` | Autenticado/QA | Consulta para ambos; mutações pelo QA proprietário. |
+| `/projects/{id}/scenarios` | Autenticado/QA | Consulta para ambos; mutações pelo QA proprietário. |
+| `/projects/{id}/scenarios/{id}/executions` | Autenticado/QA | Consulta para ambos; criação e transições de estado pelo QA proprietário. |
 
 ### Testes
 
