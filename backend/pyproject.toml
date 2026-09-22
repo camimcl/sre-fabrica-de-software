@@ -30,4 +30,5 @@ include = ["app*"]
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-ra"
+python_classes = ["*Test"]
 markers = ["integration: requires a migrated PostgreSQL test database"]
