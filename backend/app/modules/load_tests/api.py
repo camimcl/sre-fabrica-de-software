@@ -6,18 +6,23 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+import asyncio
+
 from app.db.session import get_db
 from app.db.types import ExecutionStatus
 from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
+from app.modules.load_tests import engine as load_engine
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.load_tests.schemas import (
     ExecutionCancelRequest,
     ExecutionCreateRequest,
     ExecutionResponse,
+    MetricWindowResponse,
     ScenarioResponse,
     ScenarioWrite,
 )
+from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
 
 
@@ -44,6 +49,11 @@ def _ensure_transition(current: ExecutionStatus, target: ExecutionStatus) -> Non
         raise HTTPException(
             status_code=409, detail="Invalid execution state transition"
         )
+
+
+# When True (default), starting an execution launches the real load engine
+# (Phase B). Tests that exercise manual state transitions (Phase A) disable it.
+ENGINE_ENABLED = True
 
 
 def _now() -> datetime:
@@ -280,6 +290,29 @@ def get_execution(
     return _execution(db, scenario_id, execution_id)
 
 
+@router.get(
+    "/{project_id}/scenarios/{scenario_id}/executions/{execution_id}/metric-windows",
+    response_model=list[MetricWindowResponse],
+)
+def list_metric_windows(
+    project_id: UUID,
+    scenario_id: UUID,
+    execution_id: UUID,
+    _: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> list[MetricWindow]:
+    _project(db, project_id)
+    _scenario(db, project_id, scenario_id)
+    _execution(db, scenario_id, execution_id)
+    return list(
+        db.scalars(
+            select(MetricWindow)
+            .where(MetricWindow.execution_id == execution_id)
+            .order_by(MetricWindow.sequence_number)
+        )
+    )
+
+
 # --- Execution lifecycle transitions ----------------------------------------
 
 
@@ -295,7 +328,7 @@ def _load_owned_execution(
     "/{project_id}/scenarios/{scenario_id}/executions/{execution_id}/start",
     response_model=ExecutionResponse,
 )
-def start_execution(
+async def start_execution(
     project_id: UUID,
     scenario_id: UUID,
     execution_id: UUID,
@@ -313,6 +346,9 @@ def start_execution(
     execution.started_at = _now()
     _commit(db, "Execution could not be started")
     db.refresh(execution)
+    if ENGINE_ENABLED:
+        cancel_event = load_engine.registry.register(execution.id)
+        asyncio.create_task(load_engine.run_execution(execution.id, cancel_event))
     return execution
 
 
@@ -360,7 +396,7 @@ def fail_execution(
     "/{project_id}/scenarios/{scenario_id}/executions/{execution_id}/cancel",
     response_model=ExecutionResponse,
 )
-def cancel_execution(
+async def cancel_execution(
     project_id: UUID,
     scenario_id: UUID,
     execution_id: UUID,
@@ -370,6 +406,14 @@ def cancel_execution(
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
     _ensure_transition(execution.status, ExecutionStatus.CANCELLED)
+    # If the engine is actively driving this execution, signal it to stop and
+    # let it finalize state (effective emergency stop). Otherwise cancel here.
+    if ENGINE_ENABLED and load_engine.registry.is_running(execution.id):
+        load_engine.registry.cancel(execution.id)
+        execution.cancellation_reason = request.cancellation_reason
+        _commit(db, "Execution could not be cancelled")
+        db.refresh(execution)
+        return execution
     execution.status = ExecutionStatus.CANCELLED
     execution.cancellation_reason = request.cancellation_reason
     execution.ended_at = _now()

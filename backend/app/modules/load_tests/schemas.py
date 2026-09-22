@@ -88,6 +88,26 @@ class ExecutionCancelRequest(BaseModel):
         return cleaned
 
 
+class MetricWindowResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    execution_id: UUID
+    sequence_number: int
+    window_started_at: datetime
+    window_duration_ms: int
+    concurrency: int
+    request_count: int
+    success_count: int
+    timeout_count: int
+    throughput_rps: Decimal
+    latency_p50_ms: Decimal
+    latency_p95_ms: Decimal
+    latency_p99_ms: Decimal
+    error_rate: Decimal
+    created_at: datetime
+
+
 class ExecutionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
