@@ -56,6 +56,20 @@ def _ensure_transition(current: ExecutionStatus, target: ExecutionStatus) -> Non
 ENGINE_ENABLED = True
 
 
+def _reject_if_engine_active(execution_id: UUID) -> None:
+    """Block manual completion/failure while the engine is driving the run.
+
+    The engine owns the terminal transition of a RUNNING execution it started;
+    allowing a manual /complete or /fail here would race with the engine and
+    could leave traffic still being generated after a "terminal" state.
+    """
+    if ENGINE_ENABLED and load_engine.registry.is_running(execution_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Execution is being driven by the load engine; cancel it instead",
+        )
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -341,6 +355,11 @@ async def start_execution(
             status_code=409,
             detail="authorization_acknowledged must be true to start an execution",
         )
+    # Revalidate the target authorization now: it may have been revoked after
+    # the scenario/execution was created. Fail fast and clearly here instead of
+    # letting the engine move the execution to FAILED asynchronously.
+    scenario = _scenario(db, project_id, scenario_id)
+    _authorized_endpoint(db, project_id, scenario.endpoint_id)
     _ensure_transition(execution.status, ExecutionStatus.RUNNING)
     execution.status = ExecutionStatus.RUNNING
     execution.started_at = _now()
@@ -348,7 +367,10 @@ async def start_execution(
     db.refresh(execution)
     if ENGINE_ENABLED:
         cancel_event = load_engine.registry.register(execution.id)
-        asyncio.create_task(load_engine.run_execution(execution.id, cancel_event))
+        task = asyncio.create_task(
+            load_engine.run_execution(execution.id, cancel_event)
+        )
+        load_engine.registry.track_task(execution.id, task)
     return execution
 
 
@@ -364,6 +386,7 @@ def complete_execution(
     db: Session = Depends(get_db),
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
+    _reject_if_engine_active(execution.id)
     _ensure_transition(execution.status, ExecutionStatus.COMPLETED)
     execution.status = ExecutionStatus.COMPLETED
     execution.ended_at = _now()
@@ -384,6 +407,7 @@ def fail_execution(
     db: Session = Depends(get_db),
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
+    _reject_if_engine_active(execution.id)
     _ensure_transition(execution.status, ExecutionStatus.FAILED)
     execution.status = ExecutionStatus.FAILED
     execution.ended_at = _now()

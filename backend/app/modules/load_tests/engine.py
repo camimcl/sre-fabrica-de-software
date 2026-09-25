@@ -115,10 +115,15 @@ def _now() -> datetime:
 
 
 class EngineRegistry:
-    """Tracks at most one running load task per execution."""
+    """Tracks at most one running load task per execution.
+
+    Holds a strong reference to each background task so it is not garbage
+    collected before completion.
+    """
 
     def __init__(self) -> None:
         self._cancel_events: dict[UUID, asyncio.Event] = {}
+        self._tasks: dict[UUID, asyncio.Task] = {}
 
     def register(self, execution_id: UUID) -> asyncio.Event:
         if execution_id in self._cancel_events:
@@ -126,6 +131,9 @@ class EngineRegistry:
         event = asyncio.Event()
         self._cancel_events[execution_id] = event
         return event
+
+    def track_task(self, execution_id: UUID, task: asyncio.Task) -> None:
+        self._tasks[execution_id] = task
 
     def cancel(self, execution_id: UUID) -> bool:
         event = self._cancel_events.get(execution_id)
@@ -136,6 +144,7 @@ class EngineRegistry:
 
     def finish(self, execution_id: UUID) -> None:
         self._cancel_events.pop(execution_id, None)
+        self._tasks.pop(execution_id, None)
 
     def is_running(self, execution_id: UUID) -> bool:
         return execution_id in self._cancel_events
@@ -184,6 +193,11 @@ def _finalize_execution(
     with Session(get_engine()) as db:
         execution = db.get(TestExecution, execution_id)
         if execution is None:
+            return
+        # Only the engine may move a RUNNING execution to a terminal state.
+        # If it is no longer RUNNING, a concurrent path already finalized it;
+        # do not overwrite that outcome.
+        if execution.status != ExecutionStatus.RUNNING:
             return
         execution.status = status
         execution.ended_at = _now()
@@ -236,17 +250,19 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
             )
             return
 
-        total_windows = math.ceil(
-            plan["duration_seconds"] * 1000 / WINDOW_DURATION_MS
-        )
+        total_ms = plan["duration_seconds"] * 1000
         timeout_s = plan["timeout_ms"] / 1000
         cancelled = False
 
         async with httpx.AsyncClient(timeout=timeout_s) as client:
-            for window_index in range(total_windows):
+            elapsed_ms = 0
+            window_index = 0
+            while elapsed_ms < total_ms:
                 if cancel_event.is_set():
                     cancelled = True
                     break
+                # Last window uses only the remaining configured time.
+                window_ms = min(WINDOW_DURATION_MS, total_ms - elapsed_ms)
                 concurrency = _concurrency_for_window(plan, window_index)
                 aggregator = WindowAggregator()
                 window_started = _now()
@@ -255,7 +271,7 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                     method=plan["http_method"],
                     url=str(plan["base_url"]),
                     concurrency=concurrency,
-                    window_seconds=WINDOW_DURATION_MS / 1000,
+                    window_seconds=window_ms / 1000,
                     aggregator=aggregator,
                     cancel_event=cancel_event,
                 )
@@ -263,10 +279,12 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                     execution_id=execution_id,
                     sequence_number=window_index,
                     started_at=window_started,
-                    duration_ms=WINDOW_DURATION_MS,
+                    duration_ms=window_ms,
                     concurrency=concurrency,
                 )
                 await asyncio.to_thread(_persist_window, snapshot)
+                elapsed_ms += window_ms
+                window_index += 1
                 if cancel_event.is_set():
                     cancelled = True
                     break
@@ -313,7 +331,7 @@ async def _run_window(
     while loop.time() < deadline and not cancel_event.is_set():
         if len(pending) < concurrency:
             pending.add(asyncio.create_task(worker()))
-        done, pending = await asyncio.wait(
+        _, pending = await asyncio.wait(
             pending, timeout=0.01, return_when=asyncio.FIRST_COMPLETED
         )
     # Drain in-flight requests without starting new ones.
