@@ -75,7 +75,7 @@ CREATE TABLE test_scenarios (
         REFERENCES endpoints(project_id, id) ON DELETE RESTRICT,
     CONSTRAINT ck_scenario_duration CHECK (duration_seconds > 0),
     CONSTRAINT ck_scenario_concurrency CHECK (initial_concurrency > 0 AND max_concurrency >= initial_concurrency),
-    CONSTRAINT ck_scenario_ramp_up CHECK (ramp_up_per_window > 0),
+    CONSTRAINT ck_scenario_ramp_up CHECK (ramp_up_per_window >= 0),
     CONSTRAINT ck_scenario_timeout CHECK (timeout_ms > 0),
     CONSTRAINT ck_scenario_p95_limit CHECK (p95_limit_ms > 0),
     CONSTRAINT ck_scenario_error_limit CHECK (error_rate_limit BETWEEN 0 AND 1)
