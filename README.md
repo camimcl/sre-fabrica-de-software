@@ -127,6 +127,10 @@ O protótipo editável está no [Figma — LoadForge Sprint 02](https://www.figm
 
 A aplicação possui um primeiro fluxo executável com banco conectado, cadastro, login, perfis QA e Visualizador e CRUD persistido de usuários, projetos e endpoints. A interface React consome a API FastAPI, e as regras de acesso são aplicadas no backend. Cada usuário pode atualizar ou excluir a própria conta; o QA também gerencia outras contas. A aplicação preserva ao menos um QA e impede a exclusão de usuários com projetos ou execuções vinculados. Consulte o [Relatório Técnico da Sprint 03](docs/relatorio-sprint-03.md) para a arquitetura executável e as evidências de cada requisito.
 
+## Sprint 04
+
+O módulo de testes de carga (`load_tests`) foi implementado com CRUD de cenários e ciclo de vida de execuções persistido, validações de negócio, mensagens de erro claras e a invariante de segurança de alvo autorizado. Sobre essa base, o motor de geração de carga real (`asyncio` + `httpx`) dispara requisições concorrentes contra o endpoint autorizado, coleta métricas por janela temporal (persistidas em `metric_windows`) e oferece parada de emergência efetiva. O motor roda em tarefa assíncrona em background e não bloqueia a API; a persistência das janelas usa a sessão síncrona fora do event loop.
+
 ## Como executar localmente com Docker
 
 1. Copie `.env.example` para `.env`.
@@ -172,6 +176,10 @@ O volume nomeado `loadforge_pgdata` preserva os dados entre reinicializações. 
 | `PUT /users/{id}` e `DELETE /users/{id}` | Próprio usuário/QA | Atualiza ou exclui a própria conta; QA também gerencia outras contas. |
 | `/projects` | Autenticado/QA | Consulta para ambos; mutações para QA. |
 | `/projects/{id}/endpoints` | Autenticado/QA | Consulta para ambos; mutações pelo QA proprietário. |
+| `/projects/{id}/scenarios` | Autenticado/QA | Consulta para ambos; mutações pelo QA proprietário. |
+| `/projects/{id}/scenarios/{id}/executions` | Autenticado/QA | Consulta para ambos; criação e transições de estado pelo QA proprietário. |
+| `.../executions/{id}/start` e `/cancel` | QA proprietário | Inicia a geração de carga real (assíncrona) e a parada de emergência efetiva. |
+| `.../executions/{id}/metric-windows` | Autenticado | Consulta as janelas de métricas coletadas durante a execução (polling). |
 
 ### Testes
 
