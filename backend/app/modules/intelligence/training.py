@@ -47,7 +47,7 @@ def train_candidate(db: Session) -> ModelVersion:
         raise TrainingDataError(
             f"At least {MIN_TRAINING_SAMPLES} chronological samples are required"
         )
-    labels = [int(sample.degraded_next_window) for sample in samples]
+    labels = [int(sample.degraded_within_horizon) for sample in samples]
     if len(set(labels)) < 2:
         raise TrainingDataError("Training data must contain both degradation classes")
 
@@ -100,6 +100,7 @@ def train_candidate(db: Session) -> ModelVersion:
     notes = json.dumps(
         {
             "split": "chronological-70-30",
+            "prediction_horizon_seconds": 10,
             "train_samples": split,
             "test_samples": len(samples) - split,
             "evaluated": {name: score for name, _, score in evaluated},

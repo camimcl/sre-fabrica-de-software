@@ -47,7 +47,7 @@ def db(monkeypatch: pytest.MonkeyPatch):
     engine.dispose()
 
 
-def _seed_windows(db: Session, count: int = 31) -> TestExecution:
+def _seed_windows(db: Session, count: int = 41) -> TestExecution:
     user = User(
         full_name="QA",
         email=f"qa-{uuid4()}@example.org",
@@ -103,7 +103,7 @@ def _seed_windows(db: Session, count: int = 31) -> TestExecution:
     db.flush()
     start = datetime.now(timezone.utc)
     for sequence in range(count):
-        degraded = sequence % 2 == 1
+        degraded = sequence % 10 == 5
         db.add(
             MetricWindow(
                 execution_id=execution.id,
@@ -127,13 +127,13 @@ def _seed_windows(db: Session, count: int = 31) -> TestExecution:
     return execution
 
 
-def test_dataset_uses_next_window_as_temporal_label(db: Session) -> None:
+def test_dataset_uses_ten_second_temporal_horizon(db: Session) -> None:
     _seed_windows(db)
     samples = build_training_samples(db)
-    assert len(samples) == 30
-    assert samples[0].degraded_next_window is True
-    assert samples[1].degraded_next_window is False
-    assert samples[1].features.latency_p95_trend > 0
+    assert len(samples) == 36
+    assert samples[0].degraded_within_horizon is True
+    assert samples[5].degraded_within_horizon is False
+    assert samples[5].features.latency_p95_trend > 0
 
 
 def test_train_version_approve_and_predict(db: Session) -> None:
@@ -141,7 +141,7 @@ def test_train_version_approve_and_predict(db: Session) -> None:
     model = train_candidate(db)
 
     assert model.status == ModelStatus.CANDIDATE
-    assert model.training_sample_count == 30
+    assert model.training_sample_count == 36
     assert model.algorithm in {"logistic-regression", "random-forest"}
     assert model.f1_score is not None
     assert len(model.training_dataset_hash) == 64
@@ -212,7 +212,7 @@ def test_model_api_trains_lists_and_approves(
             )
             assert trained.status_code == 201, trained.text
             assert trained.json()["status"] == "CANDIDATE"
-            assert trained.json()["training_sample_count"] == 30
+            assert trained.json()["training_sample_count"] == 36
 
             listed = client.get("/intelligence/models", headers=headers)
             assert listed.status_code == 200

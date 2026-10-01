@@ -16,12 +16,13 @@ from app.modules.metrics.models import MetricWindow
 
 FEATURE_NAMES = tuple(MetricFeatures.__dataclass_fields__)
 MIN_TRAINING_SAMPLES = 20
+PREDICTION_HORIZON_WINDOWS = 5
 
 
 @dataclass(frozen=True, slots=True)
 class TrainingSample:
     features: MetricFeatures
-    degraded_next_window: bool
+    degraded_within_horizon: bool
     execution_id: str
     sequence_number: int
 
@@ -87,14 +88,19 @@ def build_training_samples(db: Session) -> list[TrainingSample]:
                 .order_by(MetricWindow.sequence_number)
             )
         )
-        for index in range(len(windows) - 1):
+        for index in range(len(windows) - PREDICTION_HORIZON_WINDOWS):
             current = windows[index]
+            future = windows[
+                index + 1 : index + 1 + PREDICTION_HORIZON_WINDOWS
+            ]
             samples.append(
                 TrainingSample(
                     features=features_from_window(
                         current, windows[index - 1] if index else None
                     ),
-                    degraded_next_window=_is_degraded(windows[index + 1], execution),
+                    degraded_within_horizon=any(
+                        _is_degraded(candidate, execution) for candidate in future
+                    ),
                     execution_id=str(execution.id),
                     sequence_number=current.sequence_number,
                 )
@@ -106,7 +112,7 @@ def dataset_sha256(samples: list[TrainingSample]) -> str:
     canonical = [
         {
             "features": asdict(sample.features),
-            "label": sample.degraded_next_window,
+            "label": sample.degraded_within_horizon,
             "execution_id": sample.execution_id,
             "sequence_number": sample.sequence_number,
         }
