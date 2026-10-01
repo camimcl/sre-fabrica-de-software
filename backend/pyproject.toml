@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loadforge-backend"
-version = "0.3.0"
-description = "API do LoadForge com autenticação, perfis e CRUD persistido"
+version = "0.5.0"
+description = "API do LoadForge com geracao de carga, IA local e controle adaptativo"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.14,<2",

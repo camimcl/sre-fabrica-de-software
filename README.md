@@ -8,7 +8,7 @@ Projeto Integrador de Fábrica de Software e Tópicos Avançados da UNINASSAU, t
 
 Equipes de desenvolvimento nem sempre conseguem medir como uma aplicação se comporta quando o volume de acessos aumenta. Um gerador de carga mal dimensionado também pode saturar a própria máquina de teste e distorcer os resultados. Controladores baseados apenas em limites fixos reagem somente depois que a degradação já começou.
 
-O LoadForge executará cenários autorizados de carga, coletará métricas em janelas temporais, estimará o risco de degradação nos segundos seguintes e ajustará a concorrência antes que latência, erros ou perda de throughput ultrapassem os limites configurados.
+O LoadForge executa cenários autorizados de carga, coleta métricas em janelas temporais, estima o risco de degradação nos dez segundos seguintes e ajusta a concorrência antes que latência ou erros ultrapassem os limites configurados.
 
 ## Escopo do MVP
 
@@ -34,8 +34,8 @@ Não fazem parte do MVP: chatbot, IA generativa, consumo de API externa de IA, e
 
 O diferencial computacional é formado por dois módulos:
 
-1. **DegradationRiskModel:** recebe as métricas agregadas em janelas de dois segundos e estima a probabilidade de degradação nos dez segundos seguintes. O pipeline de preparação, rotulagem, treinamento, validação e versionamento será desenvolvido pela equipe com Python e scikit-learn.
-2. **AdaptiveLoadController:** combina o risco previsto com as métricas atuais para aumentar, manter ou reduzir a concorrência. Se o modelo estiver indisponível ou receber dados inválidos, o controlador continua operando por regras.
+1. **DegradationRiskModel:** recebe métricas agregadas em janelas de dois segundos e estima a probabilidade de degradação nas cinco janelas seguintes, totalizando dez segundos. O pipeline local prepara características e rótulos, divide os dados cronologicamente, compara regressão logística e Random Forest e versiona o candidato vencedor com métricas e hashes auditáveis.
+2. **AdaptiveLoadController:** combina o risco previsto com as métricas atuais para aumentar, manter ou reduzir a concorrência. Se não houver modelo aprovado ou a inferência falhar, o controlador continua por regras e persiste o motivo do fallback.
 
 A avaliação utilizará precisão, recall, F1, falsos positivos, antecedência da previsão, latência de inferência, throughput, latência p95, taxa de erro, uso de CPU e estabilidade do controle.
 
@@ -74,7 +74,7 @@ Os diagramas técnicos foram organizados com um caminho principal da esquerda pa
 
 | Camada | Tecnologia | Responsabilidade |
 |---|---|---|
-| Frontend | React, Vite e TypeScript | Login, usuários, projetos e endpoints |
+| Frontend | React, Vite e TypeScript | Cadastro, cenários, execução, monitor adaptativo e modelos |
 | Backend | Python 3.11 e FastAPI | Regras da aplicação e interface HTTP |
 | Persistência | PostgreSQL 16 | Usuários, projetos, cenários, execuções, métricas, modelos e decisões |
 | Mapeamento e migrations | SQLAlchemy 2 e Alembic | Modelo relacional e evolução do esquema |
@@ -131,6 +131,12 @@ A aplicação possui um primeiro fluxo executável com banco conectado, cadastro
 
 O módulo de testes de carga (`load_tests`) foi implementado com CRUD de cenários e ciclo de vida de execuções persistido, validações de negócio, mensagens de erro claras e a invariante de segurança de alvo autorizado. Sobre essa base, o motor de geração de carga real (`asyncio` + `httpx`) dispara requisições concorrentes contra o endpoint autorizado, coleta métricas por janela temporal (persistidas em `metric_windows`) e oferece parada de emergência efetiva. O motor roda em tarefa assíncrona em background e não bloqueia a API; a persistência das janelas usa a sessão síncrona fora do event loop.
 
+## Sprint 05
+
+O segundo módulo funcional integra `intelligence` e `control` ao motor de carga. A aplicação forma um conjunto de dados próprio com as janelas persistidas, rotula a ocorrência de degradação nos dez segundos futuros, compara dois algoritmos locais e armazena a versão candidata com precisão, recall, F1, acurácia e hashes do conjunto e do artefato. Um QA pode aprovar uma versão; as execuções `AI_HYBRID` passam a persistir uma previsão e uma decisão por janela, enquanto a ausência ou falha do modelo ativa o fallback por regras sem interromper o teste.
+
+O painel React agora permite criar cenários, iniciar e interromper execuções, acompanhar métricas, riscos e decisões e administrar versões do modelo. A explicação técnica, as regras atualizadas, os testes e o registro de bugs estão no [Relatório Técnico da Sprint 05](docs/relatorio-sprint-05.md).
+
 ## Como executar localmente com Docker
 
 1. Copie `.env.example` para `.env`.
@@ -162,7 +168,7 @@ O módulo de testes de carga (`load_tests`) foi implementado com CRUD de cenári
    docker compose down
    ```
 
-O volume nomeado `loadforge_pgdata` preserva os dados entre reinicializações. O serviço opcional `migrate` também permite aplicar as migrations isoladamente com `docker compose --profile tools run --rm migrate`. A porta do PostgreSQL fica limitada ao próprio computador (`127.0.0.1`).
+Os volumes nomeados `loadforge_pgdata` e `loadforge_model_artifacts` preservam, respectivamente, os dados e os modelos aprováveis entre reinicializações. O serviço opcional `migrate` também permite aplicar as migrations isoladamente com `docker compose --profile tools run --rm migrate`. A porta do PostgreSQL fica limitada ao próprio computador (`127.0.0.1`).
 
 ### Rotas principais
 
@@ -180,6 +186,11 @@ O volume nomeado `loadforge_pgdata` preserva os dados entre reinicializações. 
 | `/projects/{id}/scenarios/{id}/executions` | Autenticado/QA | Consulta para ambos; criação e transições de estado pelo QA proprietário. |
 | `.../executions/{id}/start` e `/cancel` | QA proprietário | Inicia a geração de carga real (assíncrona) e a parada de emergência efetiva. |
 | `.../executions/{id}/metric-windows` | Autenticado | Consulta as janelas de métricas coletadas durante a execução (polling). |
+| `.../executions/{id}/risk-predictions` | Autenticado | Consulta as previsões persistidas por janela. |
+| `.../executions/{id}/control-decisions` | Autenticado | Consulta as ações e justificativas do controlador. |
+| `GET /intelligence/models` | Autenticado | Lista versões, estados e métricas dos modelos locais. |
+| `POST /intelligence/models/train` | QA | Treina e persiste uma nova versão candidata. |
+| `POST /intelligence/models/{id}/approve` | QA | Valida o artefato e aprova uma única versão para inferência. |
 
 ### Testes
 
@@ -190,17 +201,17 @@ python -m pip install -e ".[dev]"
 pytest -q
 ```
 
-O teste com PostgreSQL requer um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele.
+A suíte atual possui **52 testes aprovados** e **2 testes condicionais ao PostgreSQL**. Esses testes de integração requerem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele.
 
 ### Configuração sensível
 
-O repositório mantém somente exemplos vazios de configuração. Senhas, tokens, chaves privadas e arquivos `.env` devem permanecer apenas no ambiente local ou em um gerenciador de segredos. Ao executar o backend fora do Compose, defina `DATABASE_URL` ou todos os componentes `POSTGRES_*`; não existe credencial padrão no código nem na configuração do Alembic.
+O repositório mantém somente exemplos vazios de configuração. Senhas, tokens, chaves privadas e arquivos `.env` devem permanecer apenas no ambiente local ou em um gerenciador de segredos. Ao executar o backend fora do Compose, defina `DATABASE_URL` ou todos os componentes `POSTGRES_*`; não existe credencial padrão no código nem na configuração do Alembic. Artefatos `joblib` não são versionados: ficam no diretório definido por `LOADFORGE_MODEL_DIR`, e a aplicação confere caminho, versão, esquema de atributos e SHA-256 antes de carregá-los.
 
 Se o volume `loadforge_pgdata` já tiver sido inicializado com outra senha, alterar apenas o `.env` não modifica a credencial armazenada pelo PostgreSQL. Nesse caso, a senha do usuário deve ser rotacionada no banco existente ou, quando os dados forem descartáveis, o ambiente local pode ser recriado conscientemente.
 
 ## Segurança e uso responsável
 
-O LoadForge deve executar testes somente contra aplicações próprias ou expressamente autorizadas. Cada cenário terá limites configuráveis de concorrência, duração e timeout, declaração de autorização e interrupção imediata.
+O LoadForge deve executar testes somente contra aplicações próprias ou expressamente autorizadas. Cada cenário possui limites máximos de concorrência, duração e timeout, declaração de autorização e interrupção imediata. Em implantação compartilhada, a rede de saída da API também deve ser restringida por política de infraestrutura para impedir acesso a destinos internos não autorizados.
 
 ## Equipe
 

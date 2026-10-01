@@ -46,6 +46,9 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       LOADFORGE_TOKEN_SECRET: ${LOADFORGE_TOKEN_SECRET:?Defina LOADFORGE_TOKEN_SECRET no arquivo .env}
+      LOADFORGE_MODEL_DIR: /app/backend/models/artifacts
+    volumes:
+      - loadforge_model_artifacts:/app/backend/models/artifacts
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
@@ -73,3 +76,5 @@ services:
 volumes:
   loadforge_pgdata:
     name: loadforge_pgdata
+  loadforge_model_artifacts:
+    name: loadforge_model_artifacts

@@ -10,7 +10,7 @@ from app.modules.load_tests.api import router as load_tests_router
 from app.modules.projects.api import router as projects_router
 
 
-app = FastAPI(title="LoadForge API", version="0.3.0")
+app = FastAPI(title="LoadForge API", version="0.5.0")
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(load_tests_router)
