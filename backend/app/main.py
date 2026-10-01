@@ -4,6 +4,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import get_engine
 from app.modules.auth.api import router as auth_router
+from app.modules.intelligence.api import execution_router as intelligence_execution_router
+from app.modules.intelligence.api import router as intelligence_router
 from app.modules.load_tests.api import router as load_tests_router
 from app.modules.projects.api import router as projects_router
 
@@ -12,6 +14,8 @@ app = FastAPI(title="LoadForge API", version="0.3.0")
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(load_tests_router)
+app.include_router(intelligence_router)
+app.include_router(intelligence_execution_router)
 
 
 @app.get("/health/live", tags=["health"])
