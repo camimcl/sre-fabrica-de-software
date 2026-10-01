@@ -1,4 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+
+import { api } from './api'
+import SprintFivePanel from './SprintFivePanel'
 
 type Role = 'QA' | 'VIEWER'
 type User = { id: string; full_name: string; email: string; role: Role }
@@ -37,23 +40,6 @@ const blankEndpoint: EndpointForm = {
 }
 const blankUser: UserForm = { full_name: '', email: '', password: '', role: 'VIEWER' }
 
-async function api<T>(path: string, method = 'GET', body?: unknown, token?: string): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    method,
-    headers: {
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}))
-    const detail = data.detail
-    throw new Error(typeof detail === 'string' ? detail : `Falha na operação (${response.status})`)
-  }
-  return response.status === 204 ? (undefined as T) : (await response.json()) as T
-}
-
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem('loadforge-token') || '')
   const [user, setUser] = useState<User | null>(null)
@@ -75,9 +61,9 @@ export default function App() {
   const canEdit = user?.role === 'QA' && selectedProject?.owner_id === user.id
   const qaCount = users.filter((entry) => entry.role === 'QA').length
 
-  function report(error: unknown) {
+  const report = useCallback((error: unknown) => {
     setNotice(error instanceof Error ? error.message : 'Ocorreu um erro inesperado.')
-  }
+  }, [])
 
   async function refreshProjects(accessToken: string) {
     const rows = await api<Project[]>('/projects', 'GET', undefined, accessToken)
@@ -280,7 +266,7 @@ export default function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">LF</span><div><strong>LoadForge</strong><small>Ambiente local · Sprint 03</small></div></div>
+        <div className="brand"><span className="brand-mark">LF</span><div><strong>LoadForge</strong><small>Ambiente local · Sprint 05</small></div></div>
         {user && <div className="account"><span>{user.full_name} <em>{user.role === 'QA' ? 'QA' : 'Visualizador'}</em></span><button className="link-button" onClick={logout}>Sair</button></div>}
       </header>
 
@@ -318,6 +304,7 @@ export default function App() {
               </> : <p className="empty">Selecione ou crie um projeto para visualizar os endpoints.</p>}
             </section>
           </div>
+          {selectedProject && <SprintFivePanel token={token} projectId={selectedProject.id} endpoints={endpoints} canEdit={canEdit} isQa={user.role === 'QA'} report={report} />}
           <section className="card users-card">
             <div className="section-heading">
               <div>
