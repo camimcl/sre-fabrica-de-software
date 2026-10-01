@@ -122,6 +122,7 @@ def _seed(factory: sessionmaker, base_url: str, **scenario_over) -> uuid4:
             duration_seconds=scenario.duration_seconds,
             initial_concurrency=scenario.initial_concurrency,
             max_concurrency=scenario.max_concurrency,
+            ramp_up_per_window=scenario.ramp_up_per_window,
             timeout_ms=scenario.timeout_ms,
             p95_limit_ms=scenario.p95_limit_ms,
             error_rate_limit=scenario.error_rate_limit,
@@ -205,6 +206,9 @@ def test_engine_cancellation_is_effective(db_engine, target, monkeypatch) -> Non
 
     asyncio.run(drive())
     assert _status(db_engine, execution_id) == ExecutionStatus.CANCELLED
+    windows = _windows(db_engine, execution_id)
+    assert windows
+    assert windows[-1].window_duration_ms < load_engine.WINDOW_DURATION_MS
 
 
 def test_engine_fails_on_unauthorized_endpoint(db_engine, target) -> None:
@@ -229,3 +233,44 @@ def test_aggregator_math() -> None:
     assert agg.success_count == 1
     assert agg.timeout_count == 1
     assert float(agg.error_rate()) == 0.5
+
+
+def test_window_maintains_configured_concurrency() -> None:
+    class _Response:
+        status_code = 200
+
+    class _Stream:
+        def __init__(self, client):
+            self.client = client
+
+        async def __aenter__(self):
+            self.client.active += 1
+            self.client.peak = max(self.client.peak, self.client.active)
+            await asyncio.sleep(0.03)
+            return _Response()
+
+        async def __aexit__(self, *_):
+            self.client.active -= 1
+
+    class _Client:
+        active = 0
+        peak = 0
+
+        def stream(self, *_):
+            return _Stream(self)
+
+    client = _Client()
+    aggregator = load_engine.WindowAggregator()
+    asyncio.run(
+        load_engine._run_window(
+            client=client,
+            method="GET",
+            url="http://local.test",
+            concurrency=4,
+            window_seconds=0.08,
+            aggregator=aggregator,
+            cancel_event=asyncio.Event(),
+        )
+    )
+    assert client.peak == 4
+    assert aggregator.request_count >= 4

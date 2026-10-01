@@ -228,6 +228,22 @@ def test_scenario_validations(api: tuple[TestClient, sessionmaker]) -> None:
         ).status_code
         == 422
     )
+    # operational ceilings protect the API process from abusive scenarios
+    for override in (
+        {"duration_seconds": 3601},
+        {"max_concurrency": 501},
+        {"ramp_up_per_window": 501},
+        {"timeout_ms": 60001},
+        {"p95_limit_ms": 300001},
+    ):
+        assert (
+            client.post(
+                base,
+                json=_scenario_payload(endpoint_id, **override),
+                headers=headers,
+            ).status_code
+            == 422
+        )
 
 
 def test_authorization_invariant(api: tuple[TestClient, sessionmaker]) -> None:
@@ -331,7 +347,25 @@ def test_execution_creation_snapshots_and_requires_ack(
     assert fetched["status"] == "PENDING"
     assert fetched["initial_concurrency"] == 5
     assert fetched["max_concurrency"] == 50
+    assert fetched["ramp_up_per_window"] == 2
     assert fetched["initiated_by"] == str(qa.id)
+
+    # The execution keeps its own immutable ramp-up snapshot even if the
+    # scenario is edited before the engine starts.
+    endpoint_id = client.get(
+        f"/projects/{project_id}/scenarios/{scenario_id}", headers=headers
+    ).json()["endpoint_id"]
+    changed = client.put(
+        f"/projects/{project_id}/scenarios/{scenario_id}",
+        json=_scenario_payload(endpoint_id, ramp_up_per_window=10),
+        headers=headers,
+    )
+    assert changed.status_code == 200
+    fetched_again = client.get(
+        f"/projects/{project_id}/scenarios/{scenario_id}/executions/{execution_id}",
+        headers=headers,
+    ).json()
+    assert fetched_again["ramp_up_per_window"] == 2
 
     # acknowledgement is required at creation
     endpoint_id = _endpoint(client, project_id, headers)

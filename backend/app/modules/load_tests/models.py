@@ -84,6 +84,7 @@ class TestExecution(Base):
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     initial_concurrency: Mapped[int] = mapped_column(Integer, nullable=False)
     max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False)
+    ramp_up_per_window: Mapped[int] = mapped_column(Integer, nullable=False)
     timeout_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     p95_limit_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     error_rate_limit: Mapped[Decimal] = mapped_column(Numeric(6, 5), nullable=False)

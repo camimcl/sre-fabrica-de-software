@@ -51,32 +51,43 @@ class MetadataContractTest(unittest.TestCase):
                 if re.match(r"^    [a-z0-9_]+\s", line)
             }
 
-        migration_source = (
-            REPOSITORY_ROOT
-            / "backend"
-            / "migrations"
-            / "versions"
-            / "20260917_0001_initial_schema.py"
-        ).read_text(encoding="utf-8")
         migration_columns: dict[str, set[str]] = {}
-        for node in ast.walk(ast.parse(migration_source)):
-            if not (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "create_table"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-            ):
-                continue
-            migration_columns[node.args[0].value] = {
-                argument.args[0].value
-                for argument in node.args[1:]
-                if isinstance(argument, ast.Call)
-                and isinstance(argument.func, ast.Attribute)
-                and argument.func.attr == "Column"
-                and argument.args
-                and isinstance(argument.args[0], ast.Constant)
-            }
+        migrations = REPOSITORY_ROOT / "backend" / "migrations" / "versions"
+        for path in sorted(migrations.glob("*.py")):
+            module = ast.parse(path.read_text(encoding="utf-8"))
+            upgrade = next(
+                node
+                for node in module.body
+                if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
+            )
+            for node in ast.walk(upgrade):
+                if not (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                ):
+                    continue
+                if node.func.attr == "create_table":
+                    migration_columns[node.args[0].value] = {
+                        argument.args[0].value
+                        for argument in node.args[1:]
+                        if isinstance(argument, ast.Call)
+                        and isinstance(argument.func, ast.Attribute)
+                        and argument.func.attr == "Column"
+                        and argument.args
+                        and isinstance(argument.args[0], ast.Constant)
+                    }
+                elif (
+                    node.func.attr == "add_column"
+                    and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Call)
+                    and node.args[1].args
+                    and isinstance(node.args[1].args[0], ast.Constant)
+                ):
+                    migration_columns[node.args[0].value].add(
+                        node.args[1].args[0].value
+                    )
 
         sqlalchemy_columns: dict[str, set[str]] = {}
         modules = REPOSITORY_ROOT / "backend" / "app" / "modules"

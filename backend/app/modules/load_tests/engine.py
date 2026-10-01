@@ -7,7 +7,6 @@ writes use the existing synchronous Session executed off the event loop via
 
 import asyncio
 import math
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -171,7 +170,7 @@ def _load_plan(execution_id: UUID) -> dict | None:
             "duration_seconds": execution.duration_seconds,
             "initial_concurrency": execution.initial_concurrency,
             "max_concurrency": execution.max_concurrency,
-            "ramp_up_per_window": scenario.ramp_up_per_window if scenario else 0,
+            "ramp_up_per_window": execution.ramp_up_per_window,
             "timeout_ms": execution.timeout_ms,
             "base_url": endpoint.base_url if endpoint else None,
             "http_method": endpoint.http_method if endpoint else "GET",
@@ -220,13 +219,16 @@ async def _fire_one(
     loop = asyncio.get_event_loop()
     start = loop.time()
     try:
-        response = await client.request(method, url)
-        latency_ms = (loop.time() - start) * 1000
-        return RequestOutcome(
-            latency_ms=latency_ms,
-            is_success=response.status_code < 400,
-            is_timeout=False,
-        )
+        # Streaming closes the response without retaining an arbitrarily large
+        # body in memory. LoadForge measures response headers/status, not body
+        # content, so buffering the payload would only increase resource use.
+        async with client.stream(method, url) as response:
+            latency_ms = (loop.time() - start) * 1000
+            return RequestOutcome(
+                latency_ms=latency_ms,
+                is_success=response.status_code < 400,
+                is_timeout=False,
+            )
     except httpx.TimeoutException:
         latency_ms = (loop.time() - start) * 1000
         return RequestOutcome(latency_ms=latency_ms, is_success=False, is_timeout=True)
@@ -266,6 +268,8 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                 concurrency = _concurrency_for_window(plan, window_index)
                 aggregator = WindowAggregator()
                 window_started = _now()
+                loop = asyncio.get_running_loop()
+                window_clock_started = loop.time()
                 await _run_window(
                     client=client,
                     method=plan["http_method"],
@@ -275,11 +279,14 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                     aggregator=aggregator,
                     cancel_event=cancel_event,
                 )
+                observed_window_ms = max(
+                    1, min(window_ms, round((loop.time() - window_clock_started) * 1000))
+                )
                 snapshot = aggregator.snapshot(
                     execution_id=execution_id,
                     sequence_number=window_index,
                     started_at=window_started,
-                    duration_ms=window_ms,
+                    duration_ms=observed_window_ms,
                     concurrency=concurrency,
                 )
                 await asyncio.to_thread(_persist_window, snapshot)
@@ -320,20 +327,13 @@ async def _run_window(
     """Keep `concurrency` requests in flight until the window elapses."""
     loop = asyncio.get_event_loop()
     deadline = loop.time() + window_seconds
-    semaphore = asyncio.Semaphore(concurrency)
-
     async def worker() -> None:
-        async with semaphore:
+        while loop.time() < deadline and not cancel_event.is_set():
             outcome = await _fire_one(client, method, url)
             aggregator.add(outcome)
 
-    pending: set[asyncio.Task] = set()
-    while loop.time() < deadline and not cancel_event.is_set():
-        if len(pending) < concurrency:
-            pending.add(asyncio.create_task(worker()))
-        _, pending = await asyncio.wait(
-            pending, timeout=0.01, return_when=asyncio.FIRST_COMPLETED
-        )
-    # Drain in-flight requests without starting new ones.
-    if pending:
-        await asyncio.gather(*pending, return_exceptions=True)
+    # One long-lived worker per configured concurrent slot avoids the previous
+    # ramp-up race in which only one request was often active against fast
+    # targets. In-flight calls are drained when the window or stop signal ends.
+    workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
+    await asyncio.gather(*workers, return_exceptions=True)

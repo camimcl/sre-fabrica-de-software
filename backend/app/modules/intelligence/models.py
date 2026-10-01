@@ -25,7 +25,10 @@ class ModelVersion(Base):
     precision_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 5))
     recall_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 5))
     f1_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 5))
+    accuracy_score: Mapped[Decimal | None] = mapped_column(Numeric(6, 5))
+    training_sample_count: Mapped[int] = mapped_column(Integer, nullable=False)
     training_dataset_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

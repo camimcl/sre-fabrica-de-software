@@ -48,12 +48,17 @@ CREATE TABLE model_versions (
     precision_score NUMERIC(6,5),
     recall_score NUMERIC(6,5),
     f1_score NUMERIC(6,5),
+    accuracy_score NUMERIC(6,5),
+    training_sample_count INTEGER NOT NULL,
     training_dataset_hash VARCHAR(128) NOT NULL,
+    artifact_sha256 VARCHAR(64) NOT NULL,
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT ck_model_precision CHECK (precision_score IS NULL OR precision_score BETWEEN 0 AND 1),
     CONSTRAINT ck_model_recall CHECK (recall_score IS NULL OR recall_score BETWEEN 0 AND 1),
-    CONSTRAINT ck_model_f1 CHECK (f1_score IS NULL OR f1_score BETWEEN 0 AND 1)
+    CONSTRAINT ck_model_f1 CHECK (f1_score IS NULL OR f1_score BETWEEN 0 AND 1),
+    CONSTRAINT ck_model_accuracy CHECK (accuracy_score IS NULL OR accuracy_score BETWEEN 0 AND 1),
+    CONSTRAINT ck_model_sample_count CHECK (training_sample_count > 0)
 );
 
 CREATE TABLE test_scenarios (
@@ -78,7 +83,12 @@ CREATE TABLE test_scenarios (
     CONSTRAINT ck_scenario_ramp_up CHECK (ramp_up_per_window >= 0),
     CONSTRAINT ck_scenario_timeout CHECK (timeout_ms > 0),
     CONSTRAINT ck_scenario_p95_limit CHECK (p95_limit_ms > 0),
-    CONSTRAINT ck_scenario_error_limit CHECK (error_rate_limit BETWEEN 0 AND 1)
+    CONSTRAINT ck_scenario_error_limit CHECK (error_rate_limit BETWEEN 0 AND 1),
+    CONSTRAINT ck_scenario_operational_limits CHECK (
+        duration_seconds <= 3600 AND max_concurrency <= 500
+        AND ramp_up_per_window <= 500 AND timeout_ms <= 60000
+        AND p95_limit_ms <= 300000
+    )
 );
 
 CREATE TABLE test_executions (
@@ -91,6 +101,7 @@ CREATE TABLE test_executions (
     duration_seconds INTEGER NOT NULL,
     initial_concurrency INTEGER NOT NULL,
     max_concurrency INTEGER NOT NULL,
+    ramp_up_per_window INTEGER NOT NULL,
     timeout_ms INTEGER NOT NULL,
     p95_limit_ms INTEGER NOT NULL,
     error_rate_limit NUMERIC(6,5) NOT NULL,
@@ -101,9 +112,15 @@ CREATE TABLE test_executions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT ck_execution_duration CHECK (duration_seconds > 0),
     CONSTRAINT ck_execution_concurrency CHECK (initial_concurrency > 0 AND max_concurrency >= initial_concurrency),
+    CONSTRAINT ck_execution_ramp_up CHECK (ramp_up_per_window >= 0),
     CONSTRAINT ck_execution_timeout CHECK (timeout_ms > 0),
     CONSTRAINT ck_execution_p95_limit CHECK (p95_limit_ms > 0),
     CONSTRAINT ck_execution_error_limit CHECK (error_rate_limit BETWEEN 0 AND 1),
+    CONSTRAINT ck_execution_operational_limits CHECK (
+        duration_seconds <= 3600 AND max_concurrency <= 500
+        AND ramp_up_per_window <= 500 AND timeout_ms <= 60000
+        AND p95_limit_ms <= 300000
+    ),
     CONSTRAINT ck_execution_dates CHECK (ended_at IS NULL OR started_at IS NULL OR ended_at >= started_at)
 );
 
