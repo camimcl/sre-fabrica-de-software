@@ -21,6 +21,9 @@ from app.db import models  # noqa: F401
 from app.db.base import Base
 from app.db.types import ControlStrategy, ExecutionStatus, UserRole
 from app.modules.auth.models import User
+from app.modules.control.models import ControlDecision
+from app.modules.intelligence.contracts import RiskPredictionResult
+from app.modules.intelligence.models import RiskPrediction
 from app.modules.load_tests import engine as load_engine
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
@@ -102,6 +105,7 @@ def _seed(factory: sessionmaker, base_url: str, **scenario_over) -> uuid4:
             "timeout_ms": 1000,
             "p95_limit_ms": 800,
             "error_rate_limit": "0.5",
+            "strategy": ControlStrategy.RULES,
         }
         scenario_fields.update(scenario_over)
         scenario = TestScenario(
@@ -109,7 +113,6 @@ def _seed(factory: sessionmaker, base_url: str, **scenario_over) -> uuid4:
             endpoint_id=endpoint.id,
             created_by=user.id,
             name="S",
-            strategy=ControlStrategy.RULES,
             **scenario_fields,
         )
         db.add(scenario)
@@ -118,7 +121,7 @@ def _seed(factory: sessionmaker, base_url: str, **scenario_over) -> uuid4:
             scenario_id=scenario.id,
             initiated_by=user.id,
             status=ExecutionStatus.RUNNING,
-            strategy=ControlStrategy.RULES,
+            strategy=scenario.strategy,
             duration_seconds=scenario.duration_seconds,
             initial_concurrency=scenario.initial_concurrency,
             max_concurrency=scenario.max_concurrency,
@@ -149,6 +152,30 @@ def _status(factory: sessionmaker, execution_id) -> ExecutionStatus:
         return db.get(TestExecution, execution_id).status
 
 
+def _decisions(factory: sessionmaker, execution_id) -> list[ControlDecision]:
+    with factory() as db:
+        return list(
+            db.scalars(
+                select(ControlDecision)
+                .join(MetricWindow)
+                .where(MetricWindow.execution_id == execution_id)
+                .order_by(MetricWindow.sequence_number)
+            )
+        )
+
+
+def _predictions(factory: sessionmaker, execution_id) -> list[RiskPrediction]:
+    with factory() as db:
+        return list(
+            db.scalars(
+                select(RiskPrediction)
+                .join(MetricWindow)
+                .where(MetricWindow.execution_id == execution_id)
+                .order_by(MetricWindow.sequence_number)
+            )
+        )
+
+
 def test_engine_completes_and_records_windows(db_engine, target) -> None:
     execution_id = _seed(db_engine, target)
     event = asyncio.Event()
@@ -161,6 +188,7 @@ def test_engine_completes_and_records_windows(db_engine, target) -> None:
     assert first.request_count > 0
     assert first.success_count == first.request_count  # target returns 200
     assert 0 <= float(first.error_rate) <= 1
+    assert len(_decisions(db_engine, execution_id)) == len(windows)
 
 
 def test_engine_counts_errors(db_engine, target, monkeypatch) -> None:
@@ -274,3 +302,55 @@ def test_window_maintains_configured_concurrency() -> None:
     )
     assert client.peak == 4
     assert aggregator.request_count >= 4
+
+
+def test_ai_hybrid_persists_prediction_and_control_decision(
+    db_engine, target, monkeypatch
+) -> None:
+    class _Predictor:
+        def predict_risk(self, _):
+            return RiskPredictionResult(
+                probability=0.90,
+                predicted_degradation=True,
+                model_version="test",
+                inference_latency_ms=1,
+            )
+
+    model_id = uuid4()
+    monkeypatch.setattr(
+        load_engine,
+        "_load_approved_predictor",
+        lambda _: (model_id, _Predictor()),
+    )
+    execution_id = _seed(
+        db_engine,
+        target,
+        duration_seconds=1,
+        strategy=ControlStrategy.AI_HYBRID,
+    )
+    asyncio.run(load_engine.run_execution(execution_id, asyncio.Event()))
+
+    predictions = _predictions(db_engine, execution_id)
+    decisions = _decisions(db_engine, execution_id)
+    assert predictions
+    assert len(predictions) == len(decisions)
+    assert all(decision.strategy == ControlStrategy.AI_HYBRID for decision in decisions)
+    assert decisions[0].next_concurrency < decisions[0].previous_concurrency
+
+
+def test_ai_hybrid_falls_back_to_rules_without_approved_model(
+    db_engine, target
+) -> None:
+    execution_id = _seed(
+        db_engine,
+        target,
+        duration_seconds=1,
+        strategy=ControlStrategy.AI_HYBRID,
+    )
+    asyncio.run(load_engine.run_execution(execution_id, asyncio.Event()))
+
+    assert not _predictions(db_engine, execution_id)
+    decisions = _decisions(db_engine, execution_id)
+    assert decisions
+    assert all(decision.strategy == ControlStrategy.RULES for decision in decisions)
+    assert "Fallback" in decisions[0].reason

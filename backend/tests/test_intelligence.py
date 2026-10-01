@@ -5,11 +5,15 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+from app.core.security import hash_password
 from app.db import models  # noqa: F401
 from app.db.base import Base
+from app.db.session import get_db
 from app.db.types import ControlStrategy, ExecutionStatus, ModelStatus, UserRole
 from app.modules.auth.models import User
 from app.modules.intelligence.dataset import build_training_samples
@@ -22,6 +26,7 @@ from app.modules.intelligence.training import approve_candidate, train_candidate
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
+from app.main import app
 
 
 @pytest.fixture
@@ -31,7 +36,11 @@ def db(monkeypatch: pytest.MonkeyPatch):
         / str(uuid4())
     ).resolve()
     monkeypatch.setenv("LOADFORGE_MODEL_DIR", str(artifact_root))
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     with Session(engine, expire_on_commit=False) as session:
         yield session
@@ -172,3 +181,48 @@ def test_tampered_artifact_is_rejected(db: Session) -> None:
     artifact.write_bytes(artifact.read_bytes() + b"tampered")
     with pytest.raises(ArtifactValidationError, match="integrity"):
         SklearnRiskPredictor(model)
+
+
+def test_model_api_trains_lists_and_approves(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "LOADFORGE_TOKEN_SECRET", "test-only-secret-value-with-at-least-32-bytes"
+    )
+    execution = _seed_windows(db)
+    user = db.get(User, execution.initiated_by)
+    user.password_hash = hash_password("strong-password-123")
+    db.commit()
+
+    def session_override():
+        yield db
+
+    app.dependency_overrides[get_db] = session_override
+    try:
+        with TestClient(app) as client:
+            login = client.post(
+                "/auth/login",
+                json={"email": user.email, "password": "strong-password-123"},
+            )
+            headers = {
+                "Authorization": f"Bearer {login.json()['access_token']}"
+            }
+            trained = client.post(
+                "/intelligence/models/train", headers=headers
+            )
+            assert trained.status_code == 201, trained.text
+            assert trained.json()["status"] == "CANDIDATE"
+            assert trained.json()["training_sample_count"] == 30
+
+            listed = client.get("/intelligence/models", headers=headers)
+            assert listed.status_code == 200
+            assert listed.json()[0]["id"] == trained.json()["id"]
+
+            approved = client.post(
+                f"/intelligence/models/{trained.json()['id']}/approve",
+                headers=headers,
+            )
+            assert approved.status_code == 200, approved.text
+            assert approved.json()["status"] == "APPROVED"
+    finally:
+        app.dependency_overrides.clear()
