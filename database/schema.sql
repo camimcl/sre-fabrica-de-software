@@ -208,3 +208,4 @@ CREATE INDEX ix_executions_scenario_created ON test_executions(scenario_id, crea
 CREATE INDEX ix_metric_windows_execution_time ON metric_windows(execution_id, window_started_at);
 CREATE INDEX ix_predictions_model_version ON risk_predictions(model_version_id);
 CREATE INDEX ix_model_versions_status ON model_versions(status);
+CREATE UNIQUE INDEX uq_model_single_approved ON model_versions(status) WHERE status = 'APPROVED';

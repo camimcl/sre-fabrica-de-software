@@ -23,6 +23,7 @@ from app.modules.intelligence.predictor import (
     SklearnRiskPredictor,
 )
 from app.modules.intelligence.training import approve_candidate, train_candidate
+from app.modules.intelligence.training import chronological_partitions, TrainingDataError
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
@@ -47,7 +48,7 @@ def db(monkeypatch: pytest.MonkeyPatch):
     engine.dispose()
 
 
-def _seed_windows(db: Session, count: int = 41) -> TestExecution:
+def _seed_windows(db: Session, count: int = 121) -> TestExecution:
     user = User(
         full_name="QA",
         email=f"qa-{uuid4()}@example.org",
@@ -130,10 +131,30 @@ def _seed_windows(db: Session, count: int = 41) -> TestExecution:
 def test_dataset_uses_ten_second_temporal_horizon(db: Session) -> None:
     _seed_windows(db)
     samples = build_training_samples(db)
-    assert len(samples) == 36
+    assert len(samples) == 116
     assert samples[0].degraded_within_horizon is True
     assert samples[5].degraded_within_horizon is False
     assert samples[5].features.latency_p95_trend > 0
+
+
+def test_partitions_purge_future_labels_before_validation_and_test(db: Session):
+    _seed_windows(db)
+    train, validation, test = chronological_partitions(build_training_samples(db))
+    assert max(s.label_ends_at for s in train) < min(s.observed_at for s in validation)
+    assert max(s.label_ends_at for s in validation) < min(s.observed_at for s in test)
+
+
+def test_training_rejects_insufficient_data(db: Session):
+    _seed_windows(db, count=10)
+    with pytest.raises(TrainingDataError, match='At least'):
+        train_candidate(db)
+
+
+def test_dataset_excludes_running_executions(db: Session):
+    execution = _seed_windows(db)
+    execution.status = ExecutionStatus.RUNNING
+    db.commit()
+    assert build_training_samples(db) == []
 
 
 def test_train_version_approve_and_predict(db: Session) -> None:
@@ -141,7 +162,7 @@ def test_train_version_approve_and_predict(db: Session) -> None:
     model = train_candidate(db)
 
     assert model.status == ModelStatus.CANDIDATE
-    assert model.training_sample_count == 36
+    assert model.training_sample_count == 116
     assert model.algorithm in {"logistic-regression", "random-forest"}
     assert model.f1_score is not None
     assert len(model.training_dataset_hash) == 64
@@ -212,7 +233,7 @@ def test_model_api_trains_lists_and_approves(
             )
             assert trained.status_code == 201, trained.text
             assert trained.json()["status"] == "CANDIDATE"
-            assert trained.json()["training_sample_count"] == 36
+            assert trained.json()["training_sample_count"] == 116
 
             listed = client.get("/intelligence/models", headers=headers)
             assert listed.status_code == 200

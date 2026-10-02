@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import time
 from pathlib import Path
@@ -46,9 +47,15 @@ class SklearnRiskPredictor:
         path = resolve_artifact_path(model.artifact_path)
         if not path.is_file():
             raise ArtifactValidationError("Model artifact was not found")
-        if file_sha256(path) != model.artifact_sha256:
+        payload = path.read_bytes()
+        if hashlib.sha256(payload).hexdigest() != model.artifact_sha256:
             raise ArtifactValidationError("Model artifact integrity check failed")
-        artifact = joblib.load(path)
+        try:
+            artifact = joblib.load(io.BytesIO(payload))
+            if not isinstance(artifact, dict) or 'estimator' not in artifact:
+                raise ValueError('Invalid artifact structure')
+        except Exception as exc:
+            raise ArtifactValidationError('Model artifact could not be decoded') from exc
         if tuple(artifact.get("feature_names", ())) != FEATURE_NAMES:
             raise ArtifactValidationError("Model feature schema is incompatible")
         if artifact.get("version") != model.version:

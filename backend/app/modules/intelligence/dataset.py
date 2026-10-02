@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.db.types import ExecutionStatus
 
 from app.modules.intelligence.contracts import MetricFeatures
 from app.modules.load_tests.models import TestExecution
@@ -25,6 +27,8 @@ class TrainingSample:
     degraded_within_horizon: bool
     execution_id: str
     sequence_number: int
+    observed_at: datetime
+    label_ends_at: datetime
 
 
 def features_from_window(
@@ -74,7 +78,7 @@ def _is_degraded(next_window: MetricWindow, execution: TestExecution) -> bool:
 def build_training_samples(db: Session) -> list[TrainingSample]:
     executions = list(
         db.scalars(
-            select(TestExecution).order_by(
+            select(TestExecution).where(TestExecution.status == ExecutionStatus.COMPLETED).order_by(
                 TestExecution.created_at, TestExecution.id
             )
         )
@@ -93,6 +97,10 @@ def build_training_samples(db: Session) -> list[TrainingSample]:
             future = windows[
                 index + 1 : index + 1 + PREDICTION_HORIZON_WINDOWS
             ]
+            if any(w.window_duration_ms < 1900 or w.request_count == 0 for w in [current, *future]):
+                continue
+            if any(b.sequence_number != a.sequence_number + 1 for a, b in zip([current, *future], future)):
+                continue
             samples.append(
                 TrainingSample(
                     features=features_from_window(
@@ -103,9 +111,11 @@ def build_training_samples(db: Session) -> list[TrainingSample]:
                     ),
                     execution_id=str(execution.id),
                     sequence_number=current.sequence_number,
+                    observed_at=current.window_started_at.replace(tzinfo=timezone.utc),
+                    label_ends_at=future[-1].window_started_at.replace(tzinfo=timezone.utc),
                 )
             )
-    return samples
+    return sorted(samples, key=lambda sample: (sample.observed_at, sample.execution_id, sample.sequence_number))
 
 
 def dataset_sha256(samples: list[TrainingSample]) -> str:
@@ -115,6 +125,8 @@ def dataset_sha256(samples: list[TrainingSample]) -> str:
             "label": sample.degraded_within_horizon,
             "execution_id": sample.execution_id,
             "sequence_number": sample.sequence_number,
+            "observed_at": sample.observed_at.isoformat(),
+            "label_ends_at": sample.label_ends_at.isoformat(),
         }
         for sample in samples
     ]
