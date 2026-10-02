@@ -32,9 +32,9 @@ Fluxo completo implementado:
 
 `cenário autorizado → execução → janela de métricas → características → previsão local → decisão → nova concorrência → persistência`
 
-O treinamento não consome API externa de IA. As características incluem concorrência, throughput, latências p50/p95/p99, erros, timeouts, CPU, memória e tendências entre janelas. O rótulo indica se haverá violação de p95 ou taxa de erro em alguma das cinco janelas seguintes, equivalentes a dez segundos. A separação entre treino e teste é cronológica (70/30), reduzindo vazamento de informações futuras.
+O treinamento não consome API externa de IA. As características incluem concorrência, throughput, latências p50/p95/p99, erros, timeouts, CPU, memória e tendências entre janelas. O rótulo indica se haverá violação de p95 ou taxa de erro em alguma das cinco janelas seguintes, nominalmente equivalentes a dez segundos. São utilizadas execuções concluídas com sequências completas de janelas. A separação cronológica reserva 60% para treino, 20% para validação e 20% para teste, antes de excluir amostras cujos rótulos alcançam a partição seguinte. As três partições precisam conter as duas classes.
 
-São comparados `LogisticRegression` e `RandomForestClassifier` com estado aleatório fixo. O candidato é escolhido por F1, seguido de recall e precisão. A versão registra algoritmo, precisão, recall, F1, acurácia, quantidade de amostras, hash do conjunto, hash do artefato e metadados da divisão temporal.
+São comparados `LogisticRegression` e `RandomForestClassifier` com estado aleatório fixo. O candidato é escolhido por F1, seguido de recall e precisão, no conjunto de validação. Somente o vencedor é avaliado no teste independente. A versão registra algoritmo, precisão, recall, F1, acurácia, falsos positivos, quantidade de amostras, hash do conjunto, hash do artefato e metadados da divisão temporal.
 
 ## Integração com o banco de dados
 
@@ -46,7 +46,7 @@ São comparados `LogisticRegression` e `RandomForestClassifier` com estado aleat
 | Controle | Insere uma `control_decision` com estratégia, ação, concorrências e justificativa. | A interface consulta e exibe a decisão de cada janela. |
 | Snapshot | A execução agora guarda também `ramp_up_per_window`. | Editar o cenário depois não altera o plano histórico. |
 
-A migration `20261001_0003` adiciona o snapshot e os metadados auditáveis. `database/schema.sql`, os modelos SQLAlchemy, a migration e o diagrama relacional foram atualizados em conjunto. Os artefatos locais são mantidos no volume Docker `loadforge_model_artifacts`; o banco guarda o caminho relativo e o SHA-256 esperado.
+A migration `20261001_0003` adiciona o snapshot e os metadados auditáveis. A migration `20261001_0004` e o esquema SQL acrescentam um índice único parcial para impedir dois modelos aprovados simultaneamente. Ao migrar duplicatas históricas, a versão aprovada mais recente é preservada e as demais são aposentadas. A API desfaz a transação e retorna conflito quando aprovações concorrentes disputam essa restrição. A aplicação das migrations em PostgreSQL ainda precisa ser validada. Os artefatos locais são mantidos no volume Docker `loadforge_model_artifacts`; o banco guarda o caminho relativo e o SHA-256 esperado.
 
 ## Regras de negócio atualizadas
 
@@ -79,11 +79,13 @@ Quando não existe modelo aprovado, a interface informa que o fallback por regra
 
 | Verificação | Resultado | Cobertura principal |
 |---|---|---|
-| Backend completo | **52 aprovados, 2 ignorados** | Autenticação, persistência, motor, limites, IA, controle, APIs e segurança. |
+| Backend completo | **55 aprovados, 2 ignorados** | Autenticação, persistência, motor, limites, IA, controle, APIs e segurança; repetidos com dependências do lockfile. |
 | Pipeline de IA | Aprovado | Horizonte temporal, treinamento, seleção, aprovação, inferência e rejeição de artefato adulterado. |
 | Controle integrado | Aprovado | Decisão por regras, previsão híbrida, persistência e fallback sem modelo. |
 | Motor de carga | Aprovado | Concorrência efetiva, erros, timeout, cancelamento e duração observada. |
 | TypeScript | Aprovado | Compilação estática das telas existentes e do painel da Sprint 05. |
+| Dependências Python | Aprovado no Windows com Python 3.11 | Ambiente novo instalado a partir do lockfile; 44 pacotes compatíveis; suíte concluída em 38,37 s. |
+| Build de produção e navegador | Pendente | A instalação npm falhou com `spawn EPERM`; a verificação TypeScript em cópia local não substitui o build nem o teste visual. |
 | Docker Compose | Configuração válida | Interpolação validada com valores descartáveis; daemon Docker indisponível na máquina durante a verificação. |
 | PostgreSQL real | Não executado nesta revisão | Dois testes permanecem condicionados a `LOADFORGE_TEST_DATABASE_URL` e banco `_test`. |
 
@@ -106,13 +108,19 @@ Os testes do motor usam um alvo HTTP local descartável; nenhuma carga automatiz
 
 A revisão do histórico Git não encontrou chaves privadas, tokens ou credenciais preenchidas. `.env`, artefatos `joblib`, chaves e credenciais continuam ignorados; somente `.env.example` é versionado. O `npm audit` do lockfile não registrou vulnerabilidades conhecidas na data da análise.
 
-Pendências que não impedem a demonstração da Sprint 05:
+Pendências antes da conclusão da revisão:
 
 - executar os dois testes de integração em um PostgreSQL descartável quando o daemon Docker estiver disponível;
 - definir política de saída de rede/allowlist antes de implantação compartilhada, pois o produto acessa URLs informadas pelo QA;
 - reconciliar execuções `RUNNING` após reinicialização inesperada da API;
 - consolidar relatórios comparativos entre as três estratégias;
-- gerar lockfile reproduzível e verificável para as dependências Python.
+- separar falhas de persistência de falhas de inferência no motor;
+- impedir respostas atrasadas após troca rápida de cenário/projeto;
+- corrigir a duração observada de janelas com requisições que ultrapassam o intervalo e conferir o dimensionamento do pool HTTP;
+- validar a migração de históricos fora dos novos limites, preservando os dados;
+- concluir build de produção e navegação ponta a ponta.
+
+A reprodutibilidade das dependências Python foi implementada com `uv.lock` e exportação com hashes consumida pelo Dockerfile. Isso não representa validação da imagem Docker, ainda indisponível neste ambiente, nem uma nova auditoria completa das dependências. O aviso de depreciação de Starlette/httpx continua registrado; não houve falha nos testes por esse aviso.
 
 ## Referências técnicas
 
@@ -128,4 +136,4 @@ Pendências que não impedem a demonstração da Sprint 05:
 
 ## Conclusão
 
-A Sprint 05 transforma os contratos de IA e controle em um segundo módulo completo, integrado ao banco e ao motor de carga. O usuário consegue operar o fluxo pela interface, recuperar os registros e observar como cada janela resultou em previsão, decisão e nova concorrência. As regras, métricas, fallbacks e verificações de integridade tornam o comportamento reproduzível e explicável, sem depender de serviços externos de IA.
+A Sprint 05 implementa os contratos de IA e controle como um segundo módulo integrado ao banco e ao motor de carga. Os testes locais demonstram treinamento, inferência, persistência e decisões por janela. A homologação completa em PostgreSQL e navegador permanece pendente, assim como as correções específicas listadas acima; a implementação não equivale ao aceite final.
