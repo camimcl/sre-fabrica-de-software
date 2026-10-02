@@ -114,6 +114,8 @@ export default function SprintFivePanel({
   const [models, setModels] = useState<ModelVersion[]>([])
   const [form, setForm] = useState<ScenarioForm>(emptyForm)
   const [busy, setBusy] = useState('')
+  const [acknowledged, setAcknowledged] = useState(false)
+  const authorizedEndpointId = endpoints.find((endpoint) => endpoint.authorization_confirmed)?.id ?? ''
 
   const selectedExecution = executions.find((row) => row.id === executionId)
   const approvedModel = models.find((model) => model.status === 'APPROVED')
@@ -174,15 +176,19 @@ export default function SprintFivePanel({
   }, [executionId, projectId, scenarioId, token])
 
   useEffect(() => {
-    setForm({
-      ...emptyForm,
-      endpoint_id:
-        endpoints.find((endpoint) => endpoint.authorization_confirmed)?.id ?? '',
-    })
-    Promise.all([refreshScenarios(), refreshModels()]).catch(report)
-  }, [endpoints, projectId, refreshModels, refreshScenarios, report])
+    setForm((current) => ({ ...current, endpoint_id: authorizedEndpointId }))
+  }, [authorizedEndpointId])
 
   useEffect(() => {
+    Promise.all([refreshScenarios(), refreshModels()]).catch(report)
+  }, [projectId, refreshModels, refreshScenarios, report])
+
+  useEffect(() => {
+    setExecutionId('')
+    setMetrics([])
+    setPredictions([])
+    setDecisions([])
+    setAcknowledged(false)
     refreshExecutions().catch(report)
   }, [refreshExecutions, report])
 
@@ -214,7 +220,7 @@ export default function SprintFivePanel({
   }
 
   async function createAndStartExecution() {
-    if (!scenarioId) return
+    if (!scenarioId || !acknowledged) return
     setBusy('execution')
     try {
       const created = await api<Execution>(
@@ -329,7 +335,7 @@ export default function SprintFivePanel({
         <div className="adaptive-column">
           <div className="subsection-heading"><h3>Execuções</h3><span>{executions.length}</span></div>
           {executions.length ? <select value={executionId} onChange={(event) => setExecutionId(event.target.value)}>{executions.map((execution) => <option key={execution.id} value={execution.id}>{execution.status} · {execution.strategy} · {execution.id.slice(0, 8)}</option>)}</select> : <p className="empty compact">Crie e inicie a primeira execução.</p>}
-          {canEdit && <div className="actions adaptive-actions"><button className="primary" disabled={!scenarioId || busy === 'execution'} onClick={createAndStartExecution}>Criar e iniciar</button><button className="danger" disabled={selectedExecution?.status !== 'RUNNING' || busy === 'stop'} onClick={stopExecution}>Parada emergencial</button></div>}
+          {canEdit && <><label className="checkbox"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /> Confirmo que tenho autorização para testar este alvo.</label><div className="actions adaptive-actions"><button className="primary" disabled={!scenarioId || !acknowledged || busy === 'execution'} onClick={createAndStartExecution}>Criar e iniciar</button><button className="danger" disabled={selectedExecution?.status !== 'RUNNING' || busy === 'stop'} onClick={stopExecution}>Parada emergencial</button></div></>}
           {selectedExecution && <div className="execution-status"><strong>{selectedExecution.status}</strong><span>{selectedExecution.model_version_id ? 'Modelo local associado' : selectedExecution.strategy === 'AI_HYBRID' ? 'Executando com fallback quando necessário' : 'Controle sem modelo'}</span></div>}
         </div>
 

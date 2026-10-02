@@ -62,7 +62,7 @@ export default function App() {
   const qaCount = users.filter((entry) => entry.role === 'QA').length
 
   const report = useCallback((error: unknown) => {
-    setNotice(error instanceof Error ? error.message : 'Ocorreu um erro inesperado.')
+    setNotice(typeof error === 'string' ? error : error instanceof Error ? error.message : 'Ocorreu um erro inesperado.')
   }, [])
 
   async function refreshProjects(accessToken: string) {
@@ -304,7 +304,7 @@ export default function App() {
               </> : <p className="empty">Selecione ou crie um projeto para visualizar os endpoints.</p>}
             </section>
           </div>
-          {selectedProject && <SprintFivePanel token={token} projectId={selectedProject.id} endpoints={endpoints} canEdit={canEdit} isQa={user.role === 'QA'} report={report} />}
+          {selectedProject && <SprintFivePanel key={selectedProject.id} token={token} projectId={selectedProject.id} endpoints={endpoints.filter((endpoint) => endpoint.project_id === selectedProject.id)} canEdit={canEdit} isQa={user.role === 'QA'} report={report} />}
           <section className="card users-card">
             <div className="section-heading">
               <div>
