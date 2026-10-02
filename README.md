@@ -197,11 +197,13 @@ Os volumes nomeados `loadforge_pgdata` e `loadforge_model_artifacts` preservam, 
 No diretório do backend, instale as dependências de desenvolvimento e execute:
 
 ```bash
-python -m pip install -e ".[dev]"
-pytest -q
+uv sync --locked --extra dev --no-install-project
+uv run --no-sync pytest -q
 ```
 
-A suíte atual possui **52 testes aprovados** e **2 testes condicionais ao PostgreSQL**. Esses testes de integração requerem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele.
+A suíte atual possui **55 testes aprovados** e **2 testes condicionais ao PostgreSQL**. Esses testes de integração requerem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele.
+
+`backend/uv.lock` fixa as dependências diretas e transitivas. A imagem da API instala a exportação `backend/requirements.lock` com verificação obrigatória de hashes, sem resolver versões novas a cada build. A execução local usa o código a partir do diretório `backend`, sem precisar instalar o próprio projeto como pacote editável. Para atualizar dependências intencionalmente, execute `uv lock --upgrade`, regenere com `uv export --frozen --no-emit-project --no-dev --no-header --output-file requirements.lock` e execute novamente os testes antes de registrar os dois arquivos. O lockfile não substitui auditoria de vulnerabilidades nem fixa a imagem-base do sistema operacional.
 
 ### Configuração sensível
 
