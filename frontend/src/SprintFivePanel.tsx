@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { api } from './api'
 
@@ -115,6 +115,8 @@ export default function SprintFivePanel({
   const [form, setForm] = useState<ScenarioForm>(emptyForm)
   const [busy, setBusy] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
+  const executionRequest = useRef(0)
+  const monitorRequest = useRef(0)
   const authorizedEndpointId = endpoints.find((endpoint) => endpoint.authorization_confirmed)?.id ?? ''
 
   const selectedExecution = executions.find((row) => row.id === executionId)
@@ -139,6 +141,7 @@ export default function SprintFivePanel({
   }, [token])
 
   const refreshExecutions = useCallback(async () => {
+    const request = ++executionRequest.current
     if (!scenarioId) {
       setExecutions([])
       return
@@ -149,6 +152,7 @@ export default function SprintFivePanel({
       undefined,
       token,
     )
+    if (request !== executionRequest.current) return
     setExecutions(rows)
     setExecutionId((current) =>
       rows.some((row) => row.id === current) ? current : rows.at(-1)?.id ?? '',
@@ -156,6 +160,7 @@ export default function SprintFivePanel({
   }, [projectId, scenarioId, token])
 
   const refreshMonitor = useCallback(async () => {
+    const request = ++monitorRequest.current
     if (!scenarioId || !executionId) {
       setMetrics([])
       setPredictions([])
@@ -169,6 +174,7 @@ export default function SprintFivePanel({
       api<Prediction[]>(`${base}/risk-predictions`, 'GET', undefined, token),
       api<Decision[]>(`${base}/control-decisions`, 'GET', undefined, token),
     ])
+    if (request !== monitorRequest.current) return
     setExecutions((current) => current.map((row) => (row.id === execution.id ? execution : row)))
     setMetrics(windows)
     setPredictions(risks)
@@ -190,13 +196,28 @@ export default function SprintFivePanel({
     setDecisions([])
     setAcknowledged(false)
     refreshExecutions().catch(report)
+    return () => { executionRequest.current += 1 }
   }, [refreshExecutions, report])
 
   useEffect(() => {
-    refreshMonitor().catch(report)
-    if (selectedExecution?.status !== 'RUNNING') return
-    const timer = window.setInterval(() => refreshMonitor().catch(report), 2000)
-    return () => window.clearInterval(timer)
+    let active = true
+    let timer: number | undefined
+    async function poll() {
+      try {
+        await refreshMonitor()
+      } catch (error) {
+        if (active) report(error)
+      }
+      if (active && selectedExecution?.status === 'RUNNING') {
+        timer = window.setTimeout(poll, 2000)
+      }
+    }
+    void poll()
+    return () => {
+      active = false
+      monitorRequest.current += 1
+      window.clearTimeout(timer)
+    }
   }, [refreshMonitor, report, selectedExecution?.status])
 
   async function createScenario(event: FormEvent<HTMLFormElement>) {
@@ -308,7 +329,16 @@ export default function SprintFivePanel({
         <div className="adaptive-column">
           <div className="subsection-heading"><h3>Cenários</h3><span>{scenarios.length}</span></div>
           {scenarios.length ? (
-            <select value={scenarioId} onChange={(event) => setScenarioId(event.target.value)}>
+            <select aria-label="Cenário selecionado" value={scenarioId} disabled={!!busy} onChange={(event) => {
+              executionRequest.current += 1
+              monitorRequest.current += 1
+              setExecutions([])
+              setExecutionId('')
+              setMetrics([])
+              setPredictions([])
+              setDecisions([])
+              setScenarioId(event.target.value)
+            }}>
               {scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name} · {scenario.strategy}</option>)}
             </select>
           ) : <p className="empty compact">Nenhum cenário persistido neste projeto.</p>}
