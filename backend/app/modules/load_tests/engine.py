@@ -14,6 +14,7 @@ from uuid import UUID
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_engine
@@ -257,6 +258,9 @@ def _evaluate_and_persist(
             else:
                 try:
                     result = predictor.predict_risk(features)
+                except Exception:
+                    fallback_reason = "Fallback por regras: a inferencia local falhou. "
+                else:
                     risk = result.probability
                     prediction_row = RiskPrediction(
                         metric_window_id=window.id,
@@ -268,8 +272,6 @@ def _evaluate_and_persist(
                     db.add(prediction_row)
                     db.flush()
                     strategy = ControlStrategy.AI_HYBRID
-                except Exception:
-                    fallback_reason = "Fallback por regras: a inferencia local falhou. "
 
         controller = RulesController(
             increase_step=max(1, execution.ramp_up_per_window)
@@ -373,7 +375,12 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
         )
         current_concurrency = plan["initial_concurrency"]
 
-        async with httpx.AsyncClient(timeout=timeout_s) as client:
+        limits = httpx.Limits(
+            max_connections=plan['max_concurrency'],
+            max_keepalive_connections=plan['max_concurrency'],
+        )
+        async with httpx.AsyncClient(timeout=timeout_s, limits=limits) as client:
+            execution_clock_started = asyncio.get_running_loop().time()
             elapsed_ms = 0
             window_index = 0
             while elapsed_ms < total_ms:
@@ -401,7 +408,7 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                     cancel_event=cancel_event,
                 )
                 observed_window_ms = max(
-                    1, min(window_ms, round((loop.time() - window_clock_started) * 1000))
+                    1, round((loop.time() - window_clock_started) * 1000)
                 )
                 snapshot = aggregator.snapshot(
                     execution_id=execution_id,
@@ -419,7 +426,7 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                         predictor=predictor,
                         model_version_id=model_version_id,
                     )
-                elapsed_ms += window_ms
+                elapsed_ms = (loop.time() - execution_clock_started) * 1000
                 window_index += 1
                 if cancel_event.is_set():
                     cancelled = True
@@ -435,6 +442,11 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
             await asyncio.to_thread(
                 _finalize_execution, execution_id, ExecutionStatus.COMPLETED
             )
+    except SQLAlchemyError:
+        await asyncio.to_thread(
+            _finalize_execution, execution_id, ExecutionStatus.FAILED,
+            'Falha de persistência durante a execução.',
+        )
     except Exception:
         await asyncio.to_thread(
             _finalize_execution, execution_id, ExecutionStatus.FAILED

@@ -9,7 +9,7 @@ import os
 import threading
 import time
 from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 
 import pytest
 from fastapi.testclient import TestClient
@@ -31,8 +31,10 @@ from app.modules.metrics.models import MetricWindow
 
 class _Handler(BaseHTTPRequestHandler):
     status_code = 200
+    delay_seconds = 0.0
 
     def do_GET(self):  # noqa: N802
+        time.sleep(_Handler.delay_seconds)
         self.send_response(_Handler.status_code)
         self.end_headers()
         self.wfile.write(b"ok")
@@ -181,7 +183,7 @@ def test_start_runs_engine_and_persists_metrics(api, target) -> None:
 def test_non_multiple_duration_records_actual_window(api, target) -> None:
     client, factory = api
     ctx = _bootstrap(client, factory, target)
-    # duration 1s with 2s windows -> a single window of 1000ms
+    # The final in-flight response is included in the observed duration.
     execution_id = _create_execution(client, ctx)
     base = (
         f"/projects/{ctx['project_id']}/scenarios/{ctx['scenario_id']}"
@@ -191,7 +193,77 @@ def test_non_multiple_duration_records_actual_window(api, target) -> None:
     assert _wait_terminal(client, ctx, execution_id) == "COMPLETED"
     windows = client.get(f"{base}/metric-windows", headers=ctx["headers"]).json()
     assert len(windows) == 1
-    assert windows[0]["window_duration_ms"] == 1000
+    assert 1000 <= windows[0]["window_duration_ms"] < 1500
+
+
+def test_window_duration_includes_in_flight_response(api, target, monkeypatch) -> None:
+    client, factory = api
+    monkeypatch.setattr(_Handler, "delay_seconds", 0.7)
+    ctx = _bootstrap(client, factory, target)
+    execution_id = _create_execution(client, ctx)
+    base = (
+        f"/projects/{ctx['project_id']}/scenarios/{ctx['scenario_id']}"
+        f"/executions/{execution_id}"
+    )
+    assert client.post(f"{base}/start", headers=ctx['headers']).status_code == 200
+    assert _wait_terminal(client, ctx, execution_id) == 'COMPLETED'
+    windows = client.get(f"{base}/metric-windows", headers=ctx['headers']).json()
+    assert len(windows) == 1
+    assert windows[0]['window_duration_ms'] >= 1300
+    assert float(windows[0]['throughput_rps']) < windows[0]['request_count'] / 1.2
+
+
+def test_configured_concurrency_above_default_http_pool(api) -> None:
+    class ConcurrentHandler(BaseHTTPRequestHandler):
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+        ready = threading.Event()
+
+        def do_GET(self):
+            with self.lock:
+                type(self).active += 1
+                type(self).peak = max(type(self).peak, type(self).active)
+                if type(self).active >= 105:
+                    self.ready.set()
+            try:
+                self.ready.wait(1.5)
+                self.send_response(200)
+                self.end_headers()
+            finally:
+                with self.lock:
+                    type(self).active -= 1
+
+        def log_message(self, *args):
+            pass
+
+    class Server(ThreadingHTTPServer):
+        request_queue_size = 256
+        daemon_threads = True
+
+    server = Server(('127.0.0.1', 0), ConcurrentHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client, factory = api
+        ctx = _bootstrap(client, factory, f'http://127.0.0.1:{server.server_port}')
+        scenario_path = f"/projects/{ctx['project_id']}/scenarios/{ctx['scenario_id']}"
+        scenario = client.get(scenario_path, headers=ctx['headers']).json()
+        scenario = {key: scenario[key] for key in (
+            'name', 'endpoint_id', 'duration_seconds', 'initial_concurrency',
+            'max_concurrency', 'ramp_up_per_window', 'timeout_ms', 'strategy',
+            'p95_limit_ms', 'error_rate_limit',
+        )}
+        scenario.update(initial_concurrency=110, max_concurrency=110, timeout_ms=3000)
+        assert client.put(scenario_path, json=scenario, headers=ctx['headers']).status_code == 200
+        execution_id = _create_execution(client, ctx)
+        base = f'{scenario_path}/executions/{execution_id}'
+        assert client.post(base+'/start', headers=ctx['headers']).status_code == 200
+        assert _wait_terminal(client, ctx, execution_id) == 'COMPLETED'
+        assert ConcurrentHandler.peak >= 105
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_manual_complete_blocked_while_engine_active(api, target) -> None:

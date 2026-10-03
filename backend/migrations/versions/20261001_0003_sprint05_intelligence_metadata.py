@@ -17,6 +17,28 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Validate under a write lock before adding columns or changing historical rows.
+    # The same SQL is emitted for offline migrations; no silent clamping of history.
+    op.execute("LOCK TABLE test_scenarios, test_executions IN SHARE ROW EXCLUSIVE MODE")
+    op.execute("""
+        DO $$
+        DECLARE
+            scenario_conflicts bigint;
+            execution_conflicts bigint;
+        BEGIN
+            SELECT count(*) INTO scenario_conflicts FROM test_scenarios
+            WHERE duration_seconds > 3600 OR max_concurrency > 500
+               OR ramp_up_per_window > 500 OR timeout_ms > 60000 OR p95_limit_ms > 300000;
+            SELECT count(*) INTO execution_conflicts
+            FROM test_executions e JOIN test_scenarios s ON s.id = e.scenario_id
+            WHERE e.duration_seconds > 3600 OR e.max_concurrency > 500
+               OR s.ramp_up_per_window > 500 OR e.timeout_ms > 60000 OR e.p95_limit_ms > 300000;
+            IF scenario_conflicts > 0 OR execution_conflicts > 0 THEN
+                RAISE EXCEPTION 'Sprint 05 preflight: % scenarios and % executions exceed operational limits. History was not changed. Review incompatible historical records before retrying.',
+                    scenario_conflicts, execution_conflicts USING ERRCODE = '23514';
+            END IF;
+        END $$;
+    """)
     op.add_column(
         "test_executions",
         sa.Column("ramp_up_per_window", sa.Integer(), nullable=True),

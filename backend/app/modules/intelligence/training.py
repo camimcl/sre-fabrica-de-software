@@ -19,6 +19,7 @@ from app.db.types import ModelStatus
 from app.modules.intelligence.dataset import (
     FEATURE_NAMES,
     MIN_TRAINING_SAMPLES,
+    PREDICTION_HORIZON_WINDOWS,
     build_training_samples,
     dataset_sha256,
     feature_vector,
@@ -111,7 +112,13 @@ def train_candidate(db: Session) -> ModelVersion:
     notes = json.dumps(
         {
             "split": "chronological-60-20-20-purged",
-            "prediction_horizon_seconds": 10,
+            "prediction_horizon": {
+                "kind": "future_windows",
+                "window_count": PREDICTION_HORIZON_WINDOWS,
+                "nominal_seconds": 10,
+                "observed_min_seconds": min((s.label_ends_at - s.observed_at).total_seconds() for s in samples),
+                "observed_max_seconds": max((s.label_ends_at - s.observed_at).total_seconds() for s in samples),
+            },
             "train_samples": len(train),
             "validation_samples": len(validation),
             "test_samples": len(test),

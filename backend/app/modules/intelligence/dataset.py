@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -75,6 +75,13 @@ def _is_degraded(next_window: MetricWindow, execution: TestExecution) -> bool:
     )
 
 
+def _observation_end(window: MetricWindow) -> datetime:
+    started = window.window_started_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return started.astimezone(timezone.utc) + timedelta(milliseconds=window.window_duration_ms)
+
+
 def build_training_samples(db: Session) -> list[TrainingSample]:
     executions = list(
         db.scalars(
@@ -111,8 +118,8 @@ def build_training_samples(db: Session) -> list[TrainingSample]:
                     ),
                     execution_id=str(execution.id),
                     sequence_number=current.sequence_number,
-                    observed_at=current.window_started_at.replace(tzinfo=timezone.utc),
-                    label_ends_at=future[-1].window_started_at.replace(tzinfo=timezone.utc),
+                    observed_at=_observation_end(current),
+                    label_ends_at=_observation_end(future[-1]),
                 )
             )
     return sorted(samples, key=lambda sample: (sample.observed_at, sample.execution_id, sample.sequence_number))

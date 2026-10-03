@@ -13,7 +13,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, event
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -354,3 +355,33 @@ def test_ai_hybrid_falls_back_to_rules_without_approved_model(
     assert decisions
     assert all(decision.strategy == ControlStrategy.RULES for decision in decisions)
     assert "Fallback" in decisions[0].reason
+
+
+def test_prediction_database_failure_is_not_reported_as_inference_fallback(
+    db_engine, target, monkeypatch, tmp_path
+) -> None:
+    from test_intelligence import _seed_windows
+    from app.modules.intelligence.training import train_candidate, approve_candidate
+
+    monkeypatch.setenv('LOADFORGE_MODEL_DIR', str(tmp_path))
+    with db_engine() as db:
+        _seed_windows(db)
+        approve_candidate(db, train_candidate(db))
+    execution_id = _seed(db_engine, target, duration_seconds=1, strategy=ControlStrategy.AI_HYBRID)
+    database = db_engine.kw['bind']
+
+    def reject_prediction(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith('INSERT INTO risk_predictions'):
+            raise OperationalError(statement, parameters, RuntimeError('injected storage failure'))
+
+    event.listen(database, 'before_cursor_execute', reject_prediction)
+    try:
+        asyncio.run(load_engine.run_execution(execution_id, asyncio.Event()))
+    finally:
+        event.remove(database, 'before_cursor_execute', reject_prediction)
+    with db_engine() as db:
+        execution = db.get(TestExecution, execution_id)
+        assert execution.status == ExecutionStatus.FAILED
+        assert execution.cancellation_reason == 'Falha de persistência durante a execução.'
+    assert not _predictions(db_engine, execution_id)
+    assert not _decisions(db_engine, execution_id)

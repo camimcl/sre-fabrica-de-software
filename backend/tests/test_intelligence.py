@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import os
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -142,6 +143,26 @@ def test_partitions_purge_future_labels_before_validation_and_test(db: Session):
     train, validation, test = chronological_partitions(build_training_samples(db))
     assert max(s.label_ends_at for s in train) < min(s.observed_at for s in validation)
     assert max(s.label_ends_at for s in validation) < min(s.observed_at for s in test)
+
+
+def test_training_records_observed_horizon_instead_of_claiming_fixed_seconds(db: Session):
+    execution = _seed_windows(db)
+    windows = list(db.scalars(select(MetricWindow).where(
+        MetricWindow.execution_id == execution.id).order_by(MetricWindow.sequence_number)))
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for index, window in enumerate(windows):
+        window.window_started_at = start + timedelta(seconds=index * 4)
+        window.window_duration_ms = 4000
+    db.commit()
+    samples = build_training_samples(db)
+    assert samples[0].observed_at == start + timedelta(seconds=4)
+    assert samples[0].label_ends_at == start + timedelta(seconds=24)
+    notes = json.loads(train_candidate(db).notes)
+    assert notes['prediction_horizon'] == {
+        'kind': 'future_windows', 'window_count': 5, 'nominal_seconds': 10,
+        'observed_min_seconds': 20.0, 'observed_max_seconds': 20.0,
+    }
+    assert 'prediction_horizon_seconds' not in notes
 
 
 def test_training_rejects_insufficient_data(db: Session):
