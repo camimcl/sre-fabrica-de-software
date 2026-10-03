@@ -8,7 +8,7 @@ Projeto Integrador de Fábrica de Software e Tópicos Avançados da UNINASSAU, t
 
 Equipes de desenvolvimento nem sempre conseguem medir como uma aplicação se comporta quando o volume de acessos aumenta. Um gerador de carga mal dimensionado também pode saturar a própria máquina de teste e distorcer os resultados. Controladores baseados apenas em limites fixos reagem somente depois que a degradação já começou.
 
-O LoadForge executa cenários autorizados de carga, coleta métricas em janelas temporais, estima o risco de degradação nos dez segundos seguintes e ajusta a concorrência antes que latência ou erros ultrapassem os limites configurados.
+O LoadForge executa cenários autorizados de carga, coleta métricas em janelas temporais, estima o risco de degradação nas cinco janelas seguintes (dez segundos nominais) e usa esse sinal para ajustar a concorrência. A antecedência e o ganho de desempenho são medidos experimentalmente, não garantidos pelo algoritmo.
 
 ## Escopo do MVP
 
@@ -34,8 +34,10 @@ Não fazem parte do MVP: chatbot, IA generativa, consumo de API externa de IA, e
 
 O diferencial computacional é formado por dois módulos:
 
-1. **DegradationRiskModel:** recebe métricas agregadas em janelas de dois segundos e estima a probabilidade de degradação nas cinco janelas seguintes, totalizando dez segundos. O pipeline local prepara características e rótulos, divide os dados cronologicamente, compara regressão logística e Random Forest e versiona o candidato vencedor com métricas e hashes auditáveis.
+1. **DegradationRiskModel:** recebe métricas agregadas em janelas de dois segundos nominais e estima a probabilidade de degradação nas cinco janelas seguintes. O tempo observado inclui as requisições em voo e pode exceder o nominal. O pipeline local prepara características e rótulos, divide os dados cronologicamente, compara regressão logística e Random Forest e versiona o candidato vencedor com métricas e hashes auditáveis.
 2. **AdaptiveLoadController:** combina o risco previsto com as métricas atuais para aumentar, manter ou reduzir a concorrência. Se não houver modelo aprovado ou a inferência falhar, o controlador continua por regras e persiste o motivo do fallback.
+
+O contrato preditivo é de **cinco janelas futuras**, não dez segundos exatos de relógio. As versões novas registram `prediction_horizon` com tipo, quantidade de janelas, duração nominal e extremos observados do intervalo. As fronteiras temporais usam o fim da observação de cada janela; assim, requisições lentas não são descritas nos metadados como um horizonte fixo.
 
 A avaliação utilizará precisão, recall, F1, falsos positivos, antecedência da previsão, latência de inferência, throughput, latência p95, taxa de erro, uso de CPU e estabilidade do controle.
 
@@ -201,7 +203,15 @@ uv sync --locked --extra dev --no-install-project
 uv run --no-sync pytest -q
 ```
 
-A suíte atual possui **55 testes aprovados** e **2 testes condicionais ao PostgreSQL**. Esses testes de integração requerem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele.
+Em 03/10/2026, a suíte apresentou **64 testes aprovados**, sem falhas e sem testes ignorados. Cinco casos requerem PostgreSQL, incluindo a migração de históricos compatíveis e o bloqueio preventivo de históricos fora dos limites. Esses testes exigem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele. Não use um banco de produção.
+
+O [relatório da Sprint 05](docs/relatorio-sprint-05.md) registra build Docker, fluxo real de IA, persistência após reinício e navegação. As [evidências identificadas](docs/evidences/sprint-05/README.md) incluem as capturas e os resultados, sem credenciais. A interface foi exercitada com serviços reais, incluindo uma resposta de rede deliberadamente atrasada para conferir o isolamento da seleção.
+
+O teste de navegador `frontend/tests/navigation-race.cjs` requer Playwright, um navegador instalado e um laboratório já populado. Configure `LOADFORGE_E2E_URL`, `LOADFORGE_E2E_EMAIL`, `LOADFORGE_E2E_PASSWORD` e `LOADFORGE_E2E_FIXTURE` no ambiente, nunca no código. O fixture segue a estrutura de `docs/evidences/sprint-05/fluxo-api.json` e seus IDs devem existir no laboratório utilizado; as credenciais não fazem parte do fixture. Execute `node frontend/tests/navigation-race.cjs`. O navegador padrão é Edge; `LOADFORGE_BROWSER` permite outro canal instalado.
+
+### Atualização de bases antigas
+
+A migration `20261001_0003` faz uma pré-verificação transacional dos limites de cenários e execuções. Se encontrar históricos incompatíveis, aborta com a mensagem `Sprint 05 preflight` e as contagens, antes de adicionar colunas ou atualizar registros. A equipe deve examinar esses dados e definir uma estratégia de preservação antes de repetir a migração. Não há exclusão nem redução automática de valores históricos. Bases compatíveis mantêm os registros e recebem o snapshot de ramp-up.
 
 `backend/uv.lock` fixa as dependências diretas e transitivas. A imagem da API instala a exportação `backend/requirements.lock` com verificação obrigatória de hashes, sem resolver versões novas a cada build. A execução local usa o código a partir do diretório `backend`, sem precisar instalar o próprio projeto como pacote editável. Para atualizar dependências intencionalmente, execute `uv lock --upgrade`, regenere com `uv export --frozen --no-emit-project --no-dev --no-header --output-file requirements.lock` e execute novamente os testes antes de registrar os dois arquivos. O lockfile não substitui auditoria de vulnerabilidades nem fixa a imagem-base do sistema operacional.
 
@@ -213,7 +223,7 @@ Se o volume `loadforge_pgdata` já tiver sido inicializado com outra senha, alte
 
 ## Segurança e uso responsável
 
-O LoadForge deve executar testes somente contra aplicações próprias ou expressamente autorizadas. Cada cenário possui limites máximos de concorrência, duração e timeout, declaração de autorização e interrupção imediata. Em implantação compartilhada, a rede de saída da API também deve ser restringida por política de infraestrutura para impedir acesso a destinos internos não autorizados.
+O LoadForge deve executar testes somente contra aplicações próprias ou expressamente autorizadas. Cada cenário possui limites máximos de concorrência, duração e timeout, declaração de autorização e parada emergencial. A parada impede novas requisições; as já iniciadas são encerradas conforme a resposta ou o timeout. Em implantação compartilhada, a rede de saída da API também deve ser restringida por política de infraestrutura para impedir acesso a destinos internos não autorizados.
 
 ## Equipe
 

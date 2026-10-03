@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-03T21:22:14.678Z",
+  "exit_code": 0,
+  "passed": true,
+  "checks": [
+    "selection with late response",
+    "polling with 2500ms responses"
+  ]
+}

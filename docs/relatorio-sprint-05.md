@@ -46,7 +46,9 @@ São comparados `LogisticRegression` e `RandomForestClassifier` com estado aleat
 | Controle | Insere uma `control_decision` com estratégia, ação, concorrências e justificativa. | A interface consulta e exibe a decisão de cada janela. |
 | Snapshot | A execução agora guarda também `ramp_up_per_window`. | Editar o cenário depois não altera o plano histórico. |
 
-A migration `20261001_0003` adiciona o snapshot e os metadados auditáveis. A migration `20261001_0004` e o esquema SQL acrescentam um índice único parcial para impedir dois modelos aprovados simultaneamente. Ao migrar duplicatas históricas, a versão aprovada mais recente é preservada e as demais são aposentadas. A API desfaz a transação e retorna conflito quando aprovações concorrentes disputam essa restrição. A aplicação das migrations em PostgreSQL ainda precisa ser validada. Os artefatos locais são mantidos no volume Docker `loadforge_model_artifacts`; o banco guarda o caminho relativo e o SHA-256 esperado.
+A migration `20261001_0003` adiciona o snapshot e os metadados auditáveis. A migration `20261001_0004` e o esquema SQL acrescentam um índice único parcial para impedir dois modelos aprovados simultaneamente. Ao migrar duplicatas históricas, a versão aprovada mais recente é preservada e as demais são aposentadas. A API desfaz a transação e retorna conflito quando aprovações concorrentes disputam essa restrição. As quatro migrations foram aplicadas no PostgreSQL 16. Os testes adicionais confirmaram preservação dos históricos compatíveis e rejeição preventiva dos incompatíveis, sem alterar os dados. Os artefatos locais são mantidos em volume Docker; o banco guarda o caminho relativo e o SHA-256 esperado.
+
+Na execução híbrida `a45e7cef-db67-4ba4-a903-507ca824b2b5`, foram recuperadas quatro janelas, quatro previsões e quatro decisões associadas ao modelo `27d485d8-d171-4596-837a-8d40d825ad05`. Após reiniciar a API, os mesmos identificadores, estados e valores continuaram disponíveis. As respostas utilizadas na comparação estão no [registro do experimento](evidences/sprint-05/fluxo-api.json).
 
 ## Regras de negócio atualizadas
 
@@ -79,15 +81,19 @@ Quando não existe modelo aprovado, a interface informa que o fallback por regra
 
 | Verificação | Resultado | Cobertura principal |
 |---|---|---|
-| Backend completo | **55 aprovados, 2 ignorados** | Autenticação, persistência, motor, limites, IA, controle, APIs e segurança; repetidos com dependências do lockfile. |
+| Backend completo | **64 aprovados, zero falhas e zero ignorados** | Autenticação, persistência, motor, limites, IA, controle, APIs e segurança; dependências do lockfile. |
 | Pipeline de IA | Aprovado | Horizonte temporal, treinamento, seleção, aprovação, inferência e rejeição de artefato adulterado. |
 | Controle integrado | Aprovado | Decisão por regras, previsão híbrida, persistência e fallback sem modelo. |
 | Motor de carga | Aprovado | Concorrência efetiva, erros, timeout, cancelamento e duração observada. |
 | TypeScript | Aprovado | Compilação estática das telas existentes e do painel da Sprint 05. |
 | Dependências Python | Aprovado no Windows com Python 3.11 | Ambiente novo instalado a partir do lockfile; 44 pacotes compatíveis; suíte concluída em 38,37 s. |
-| Build de produção e navegador | Pendente | A instalação npm falhou com `spawn EPERM`; a verificação TypeScript em cópia local não substitui o build nem o teste visual. |
-| Docker Compose | Configuração válida | Interpolação validada com valores descartáveis; daemon Docker indisponível na máquina durante a verificação. |
-| PostgreSQL real | Não executado nesta revisão | Dois testes permanecem condicionados a `LOADFORGE_TEST_DATABASE_URL` e banco `_test`. |
+| Build de produção e navegador | Aprovado | Imagens construídas; login, criação, início, monitor, parada e recuperação exercitados com API real. |
+| Docker Compose | Ambiente executado | API, frontend, PostgreSQL 16 e alvo HTTP controlado em laboratório isolado. |
+| PostgreSQL real | Aprovado | Dois testes de integração e três casos de migração sobre históricos em schemas descartáveis. |
+| Seleção durante resposta atrasada | Aprovado | Erro reproduzido antes da correção; seleção e monitor corretos após invalidar consultas antigas. |
+| Monitor com consultas lentas | Aprovado | Respostas acima de dois segundos deixam de bloquear a atualização do estado terminal; polling sem sobreposição. |
+
+A coleta FIXED de 480 segundos gerou 235 amostras utilizáveis. O candidato Random Forest registrou F1 0,82609, recall 0,70370 e acurácia 0,82979 no conjunto de teste cronológico. São resultados do alvo controlado, não comprovação de generalização nem de superioridade sobre outras estratégias. O fluxo integrado também verificou fallback, rejeição de treino insuficiente (HTTP 409), aprovação, inferência, redução diante de HTTP 503, timeout e cancelamento. O [índice de evidências](evidences/sprint-05/README.md) relaciona imagens, IDs e resultados.
 
 Os testes do motor usam um alvo HTTP local descartável; nenhuma carga automatizada é enviada a serviços externos. Os testes de IA geram artefatos temporários fora do repositório.
 
@@ -103,24 +109,31 @@ Os testes do motor usam um alvo HTTP local descartável; nenhuma carga automatiz
 | `RULES` e `AI_HYBRID` usavam progressão fixa. | Integração do controlador e do preditor ao laço entre janelas. |
 | Artefato poderia ser trocado após o treino. | Verificação de SHA-256 e esquema antes da desserialização. |
 | Frontend terminava em projetos e endpoints. | Painel funcional do fluxo adaptativo e administração de modelos. |
+| Duração da janela truncada no intervalo nominal, apesar de requisições em voo. | Registro do tempo real e orçamento da execução pelo relógio monotônico. |
+| Pool HTTP limitava a concorrência a 100 mesmo com configuração maior. | Pool dimensionado pelo teto do cenário; teste local com 110 vagas. |
+| Falha de banco podia entrar no bloco de fallback de inferência. | Captura restrita ao preditor; falha SQL encerra a execução com diagnóstico sanitizado. |
+| Listagem atrasada sobrescrevia a execução do cenário recém-selecionado. | Identificação das consultas e invalidação das respostas antigas. |
+| Base histórica incompatível falhava somente ao criar as constraints. | Pré-verificação transacional com contagens e abortamento antes das alterações. |
+| Novas consultas do monitor invalidavam continuamente respostas lentas. | Polling sequencial, reagendado depois da conclusão da consulta anterior. |
+| Metadados tratavam cinco janelas variáveis como dez segundos fixos. | Contrato explicitado em janelas, duração nominal e extremos reais registrados; timestamps no fim da observação. |
+
+O horizonte é de cinco janelas futuras, nominalmente dez segundos. Janelas que drenam requisições lentas podem durar mais; os metadados novos registram essa variação. Não há garantia de previsão em exatamente dez segundos. O teste de regressão com janelas de quatro segundos confirma um horizonte observado de vinte segundos, sem rotulá-lo como dez.
 
 ## Segurança e pendências
 
 A revisão do histórico Git não encontrou chaves privadas, tokens ou credenciais preenchidas. `.env`, artefatos `joblib`, chaves e credenciais continuam ignorados; somente `.env.example` é versionado. O `npm audit` do lockfile não registrou vulnerabilidades conhecidas na data da análise.
 
-Pendências antes da conclusão da revisão:
+Evoluções operacionais registradas:
 
-- executar os dois testes de integração em um PostgreSQL descartável quando o daemon Docker estiver disponível;
 - definir política de saída de rede/allowlist antes de implantação compartilhada, pois o produto acessa URLs informadas pelo QA;
 - reconciliar execuções `RUNNING` após reinicialização inesperada da API;
 - consolidar relatórios comparativos entre as três estratégias;
-- separar falhas de persistência de falhas de inferência no motor;
-- impedir respostas atrasadas após troca rápida de cenário/projeto;
-- corrigir a duração observada de janelas com requisições que ultrapassam o intervalo e conferir o dimensionamento do pool HTTP;
-- validar a migração de históricos fora dos novos limites, preservando os dados;
-- concluir build de produção e navegação ponta a ponta.
 
-A reprodutibilidade das dependências Python foi implementada com `uv.lock` e exportação com hashes consumida pelo Dockerfile. Isso não representa validação da imagem Docker, ainda indisponível neste ambiente, nem uma nova auditoria completa das dependências. O aviso de depreciação de Starlette/httpx continua registrado; não houve falha nos testes por esse aviso.
+A reprodutibilidade das dependências Python foi implementada com `uv.lock` e exportação com hashes consumida pelo Dockerfile; a imagem foi construída no laboratório. Os avisos de depreciação de Starlette/httpx e da configuração de caminhos do Alembic foram registrados sem falhas. Esses testes não substituem uma auditoria periódica das dependências.
+
+## Dificuldades e próximos passos
+
+A disponibilidade do Docker foi necessária para superar o bloqueio de ambiente e validar o banco e o build completos. O conjunto de aprendizado precisou conter períodos saudáveis e degradados nas três partições, motivando uma coleta temporal mais longa. A próxima etapa consolida ensaios repetidos e comparáveis entre FIXED, RULES e AI_HYBRID, além das melhorias operacionais acima.
 
 ## Referências técnicas
 
@@ -136,4 +149,4 @@ A reprodutibilidade das dependências Python foi implementada com `uv.lock` e ex
 
 ## Conclusão
 
-A Sprint 05 implementa os contratos de IA e controle como um segundo módulo integrado ao banco e ao motor de carga. Os testes locais demonstram treinamento, inferência, persistência e decisões por janela. A homologação completa em PostgreSQL e navegador permanece pendente, assim como as correções específicas listadas acima; a implementação não equivale ao aceite final.
+A Sprint 05 implementa o segundo módulo integrado ao banco e ao motor de carga. Os testes e o experimento controlado demonstram treinamento, inferência, persistência, recuperação e decisões por janela. A interface permite executar o fluxo de cenário, carga, monitoramento e parada com dados reais. A comparação de desempenho entre estratégias e a preparação para implantação compartilhada são os próximos passos.

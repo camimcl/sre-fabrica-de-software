@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-03T20:56:30.457Z",
+  "url": "http://127.0.0.1:55173/",
+  "passed": true,
+  "pageErrors": [],
+  "checks": [
+    "Login de QA no navegador",
+    "Seleção da execução híbrida e leitura de risco, decisões e modelo aprovado",
+    "Consulta do histórico RULES com redução da concorrência",
+    "Criação de cenário pela interface e bloqueio sem reconhecimento de autorização",
+    "Início real, atualização automática e parada emergencial",
+    "Recarga da página e recuperação do estado CANCELLED e das métricas"
+  ],
+  "scenarioId": "38152e1c-1c96-48cf-9f6e-c0493458b0f5",
+  "executionId": "c504a059-6dc0-4138-9c80-92eefc8dc65a"
+}
