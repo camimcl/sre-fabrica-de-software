@@ -233,6 +233,7 @@ _SNAPSHOT_FIELDS = (
     "duration_seconds",
     "initial_concurrency",
     "max_concurrency",
+    "ramp_up_per_window",
     "timeout_ms",
     "p95_limit_ms",
     "error_rate_limit",

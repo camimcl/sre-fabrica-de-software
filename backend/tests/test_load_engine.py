@@ -13,7 +13,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, event
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -21,6 +22,9 @@ from app.db import models  # noqa: F401
 from app.db.base import Base
 from app.db.types import ControlStrategy, ExecutionStatus, UserRole
 from app.modules.auth.models import User
+from app.modules.control.models import ControlDecision
+from app.modules.intelligence.contracts import RiskPredictionResult
+from app.modules.intelligence.models import RiskPrediction
 from app.modules.load_tests import engine as load_engine
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
@@ -102,6 +106,7 @@ def _seed(factory: sessionmaker, base_url: str, **scenario_over) -> uuid4:
             "timeout_ms": 1000,
             "p95_limit_ms": 800,
             "error_rate_limit": "0.5",
+            "strategy": ControlStrategy.RULES,
         }
         scenario_fields.update(scenario_over)
         scenario = TestScenario(
@@ -109,7 +114,6 @@ def _seed(factory: sessionmaker, base_url: str, **scenario_over) -> uuid4:
             endpoint_id=endpoint.id,
             created_by=user.id,
             name="S",
-            strategy=ControlStrategy.RULES,
             **scenario_fields,
         )
         db.add(scenario)
@@ -118,10 +122,11 @@ def _seed(factory: sessionmaker, base_url: str, **scenario_over) -> uuid4:
             scenario_id=scenario.id,
             initiated_by=user.id,
             status=ExecutionStatus.RUNNING,
-            strategy=ControlStrategy.RULES,
+            strategy=scenario.strategy,
             duration_seconds=scenario.duration_seconds,
             initial_concurrency=scenario.initial_concurrency,
             max_concurrency=scenario.max_concurrency,
+            ramp_up_per_window=scenario.ramp_up_per_window,
             timeout_ms=scenario.timeout_ms,
             p95_limit_ms=scenario.p95_limit_ms,
             error_rate_limit=scenario.error_rate_limit,
@@ -148,6 +153,30 @@ def _status(factory: sessionmaker, execution_id) -> ExecutionStatus:
         return db.get(TestExecution, execution_id).status
 
 
+def _decisions(factory: sessionmaker, execution_id) -> list[ControlDecision]:
+    with factory() as db:
+        return list(
+            db.scalars(
+                select(ControlDecision)
+                .join(MetricWindow)
+                .where(MetricWindow.execution_id == execution_id)
+                .order_by(MetricWindow.sequence_number)
+            )
+        )
+
+
+def _predictions(factory: sessionmaker, execution_id) -> list[RiskPrediction]:
+    with factory() as db:
+        return list(
+            db.scalars(
+                select(RiskPrediction)
+                .join(MetricWindow)
+                .where(MetricWindow.execution_id == execution_id)
+                .order_by(MetricWindow.sequence_number)
+            )
+        )
+
+
 def test_engine_completes_and_records_windows(db_engine, target) -> None:
     execution_id = _seed(db_engine, target)
     event = asyncio.Event()
@@ -160,6 +189,7 @@ def test_engine_completes_and_records_windows(db_engine, target) -> None:
     assert first.request_count > 0
     assert first.success_count == first.request_count  # target returns 200
     assert 0 <= float(first.error_rate) <= 1
+    assert len(_decisions(db_engine, execution_id)) == len(windows)
 
 
 def test_engine_counts_errors(db_engine, target, monkeypatch) -> None:
@@ -205,6 +235,9 @@ def test_engine_cancellation_is_effective(db_engine, target, monkeypatch) -> Non
 
     asyncio.run(drive())
     assert _status(db_engine, execution_id) == ExecutionStatus.CANCELLED
+    windows = _windows(db_engine, execution_id)
+    assert windows
+    assert windows[-1].window_duration_ms < load_engine.WINDOW_DURATION_MS
 
 
 def test_engine_fails_on_unauthorized_endpoint(db_engine, target) -> None:
@@ -229,3 +262,126 @@ def test_aggregator_math() -> None:
     assert agg.success_count == 1
     assert agg.timeout_count == 1
     assert float(agg.error_rate()) == 0.5
+
+
+def test_window_maintains_configured_concurrency() -> None:
+    class _Response:
+        status_code = 200
+
+    class _Stream:
+        def __init__(self, client):
+            self.client = client
+
+        async def __aenter__(self):
+            self.client.active += 1
+            self.client.peak = max(self.client.peak, self.client.active)
+            await asyncio.sleep(0.03)
+            return _Response()
+
+        async def __aexit__(self, *_):
+            self.client.active -= 1
+
+    class _Client:
+        active = 0
+        peak = 0
+
+        def stream(self, *_):
+            return _Stream(self)
+
+    client = _Client()
+    aggregator = load_engine.WindowAggregator()
+    asyncio.run(
+        load_engine._run_window(
+            client=client,
+            method="GET",
+            url="http://local.test",
+            concurrency=4,
+            window_seconds=0.08,
+            aggregator=aggregator,
+            cancel_event=asyncio.Event(),
+        )
+    )
+    assert client.peak == 4
+    assert aggregator.request_count >= 4
+
+
+def test_ai_hybrid_persists_prediction_and_control_decision(
+    db_engine, target, monkeypatch
+) -> None:
+    class _Predictor:
+        def predict_risk(self, _):
+            return RiskPredictionResult(
+                probability=0.90,
+                predicted_degradation=True,
+                model_version="test",
+                inference_latency_ms=1,
+            )
+
+    model_id = uuid4()
+    monkeypatch.setattr(
+        load_engine,
+        "_load_approved_predictor",
+        lambda _: (model_id, _Predictor()),
+    )
+    execution_id = _seed(
+        db_engine,
+        target,
+        duration_seconds=1,
+        strategy=ControlStrategy.AI_HYBRID,
+    )
+    asyncio.run(load_engine.run_execution(execution_id, asyncio.Event()))
+
+    predictions = _predictions(db_engine, execution_id)
+    decisions = _decisions(db_engine, execution_id)
+    assert predictions
+    assert len(predictions) == len(decisions)
+    assert all(decision.strategy == ControlStrategy.AI_HYBRID for decision in decisions)
+    assert decisions[0].next_concurrency < decisions[0].previous_concurrency
+
+
+def test_ai_hybrid_falls_back_to_rules_without_approved_model(
+    db_engine, target
+) -> None:
+    execution_id = _seed(
+        db_engine,
+        target,
+        duration_seconds=1,
+        strategy=ControlStrategy.AI_HYBRID,
+    )
+    asyncio.run(load_engine.run_execution(execution_id, asyncio.Event()))
+
+    assert not _predictions(db_engine, execution_id)
+    decisions = _decisions(db_engine, execution_id)
+    assert decisions
+    assert all(decision.strategy == ControlStrategy.RULES for decision in decisions)
+    assert "Fallback" in decisions[0].reason
+
+
+def test_prediction_database_failure_is_not_reported_as_inference_fallback(
+    db_engine, target, monkeypatch, tmp_path
+) -> None:
+    from test_intelligence import _seed_windows
+    from app.modules.intelligence.training import train_candidate, approve_candidate
+
+    monkeypatch.setenv('LOADFORGE_MODEL_DIR', str(tmp_path))
+    with db_engine() as db:
+        _seed_windows(db)
+        approve_candidate(db, train_candidate(db))
+    execution_id = _seed(db_engine, target, duration_seconds=1, strategy=ControlStrategy.AI_HYBRID)
+    database = db_engine.kw['bind']
+
+    def reject_prediction(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith('INSERT INTO risk_predictions'):
+            raise OperationalError(statement, parameters, RuntimeError('injected storage failure'))
+
+    event.listen(database, 'before_cursor_execute', reject_prediction)
+    try:
+        asyncio.run(load_engine.run_execution(execution_id, asyncio.Event()))
+    finally:
+        event.remove(database, 'before_cursor_execute', reject_prediction)
+    with db_engine() as db:
+        execution = db.get(TestExecution, execution_id)
+        assert execution.status == ExecutionStatus.FAILED
+        assert execution.cancellation_reason == 'Falha de persistência durante a execução.'
+    assert not _predictions(db_engine, execution_id)
+    assert not _decisions(db_engine, execution_id)

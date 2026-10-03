@@ -52,6 +52,7 @@ erDiagram
       UUID model_version_id FK
       execution_status status
       control_strategy strategy
+      INTEGER ramp_up_per_window
     }
     metric_windows {
       UUID id PK
@@ -67,6 +68,10 @@ erDiagram
       VARCHAR algorithm
       model_status status
       NUMERIC f1_score
+      NUMERIC accuracy_score
+      INTEGER training_sample_count
+      VARCHAR training_dataset_hash
+      VARCHAR artifact_sha256
     }
     risk_predictions {
       UUID id PK

@@ -9,14 +9,14 @@ import os
 import threading
 import time
 from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core.security import hash_password
 from app.db import models  # noqa: F401
@@ -31,8 +31,10 @@ from app.modules.metrics.models import MetricWindow
 
 class _Handler(BaseHTTPRequestHandler):
     status_code = 200
+    delay_seconds = 0.0
 
     def do_GET(self):  # noqa: N802
+        time.sleep(_Handler.delay_seconds)
         self.send_response(_Handler.status_code)
         self.end_headers()
         self.wfile.write(b"ok")
@@ -55,14 +57,13 @@ def target() -> Iterator[str]:
 
 
 @pytest.fixture
-def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, sessionmaker]]:
+def api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[tuple[TestClient, sessionmaker]]:
     monkeypatch.setenv(
         "LOADFORGE_TOKEN_SECRET", "test-only-secret-value-with-at-least-32-bytes"
     )
     db_engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
+        f"sqlite+pysqlite:///{(tmp_path / 'integration.sqlite').as_posix()}",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
     )
     Base.metadata.create_all(db_engine)
     factory = sessionmaker(bind=db_engine, expire_on_commit=False)
@@ -73,7 +74,9 @@ def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, sessionma
 
     # Engine stays ENABLED to exercise the real integrated flow. The engine's
     # background persistence resolves its own engine via load_engine.get_engine;
-    # point it at the same in-memory database the API uses.
+    # point it at the same isolated database the API uses. Separate pooled
+    # connections prevent a polling session's rollback from undoing an engine
+    # write, which can happen when concurrent sessions share StaticPool.
     monkeypatch.setattr(load_engine, "get_engine", lambda: db_engine)
     app.dependency_overrides[get_db] = session_override
     with TestClient(app) as client:
@@ -181,7 +184,7 @@ def test_start_runs_engine_and_persists_metrics(api, target) -> None:
 def test_non_multiple_duration_records_actual_window(api, target) -> None:
     client, factory = api
     ctx = _bootstrap(client, factory, target)
-    # duration 1s with 2s windows -> a single window of 1000ms
+    # The final in-flight response is included in the observed duration.
     execution_id = _create_execution(client, ctx)
     base = (
         f"/projects/{ctx['project_id']}/scenarios/{ctx['scenario_id']}"
@@ -191,7 +194,78 @@ def test_non_multiple_duration_records_actual_window(api, target) -> None:
     assert _wait_terminal(client, ctx, execution_id) == "COMPLETED"
     windows = client.get(f"{base}/metric-windows", headers=ctx["headers"]).json()
     assert len(windows) == 1
-    assert windows[0]["window_duration_ms"] == 1000
+    assert 1000 <= windows[0]["window_duration_ms"] < 1500
+
+
+def test_window_duration_includes_in_flight_response(api, target, monkeypatch) -> None:
+    client, factory = api
+    monkeypatch.setattr(_Handler, "delay_seconds", 0.7)
+    ctx = _bootstrap(client, factory, target)
+    execution_id = _create_execution(client, ctx)
+    base = (
+        f"/projects/{ctx['project_id']}/scenarios/{ctx['scenario_id']}"
+        f"/executions/{execution_id}"
+    )
+    assert client.post(f"{base}/start", headers=ctx['headers']).status_code == 200
+    assert _wait_terminal(client, ctx, execution_id) == 'COMPLETED'
+    windows = client.get(f"{base}/metric-windows", headers=ctx['headers']).json()
+    assert len(windows) == 1
+    assert windows[0]['window_duration_ms'] >= 1300
+    assert float(windows[0]['throughput_rps']) < windows[0]['request_count'] / 1.2
+
+
+def test_configured_concurrency_above_default_http_pool(api) -> None:
+    class ConcurrentHandler(BaseHTTPRequestHandler):
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+        ready = threading.Event()
+
+        def do_GET(self):
+            with self.lock:
+                type(self).active += 1
+                type(self).peak = max(type(self).peak, type(self).active)
+                if type(self).active >= 105:
+                    self.ready.set()
+            try:
+                self.ready.wait(1.5)
+                self.send_response(200)
+                self.end_headers()
+            finally:
+                with self.lock:
+                    type(self).active -= 1
+
+        def log_message(self, *args):
+            pass
+
+    class Server(ThreadingHTTPServer):
+        request_queue_size = 256
+        daemon_threads = True
+
+    server = Server(('127.0.0.1', 0), ConcurrentHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client, factory = api
+        ctx = _bootstrap(client, factory, f'http://127.0.0.1:{server.server_port}')
+        scenario_path = f"/projects/{ctx['project_id']}/scenarios/{ctx['scenario_id']}"
+        scenario = client.get(scenario_path, headers=ctx['headers']).json()
+        scenario = {key: scenario[key] for key in (
+            'name', 'endpoint_id', 'duration_seconds', 'initial_concurrency',
+            'max_concurrency', 'ramp_up_per_window', 'timeout_ms', 'strategy',
+            'p95_limit_ms', 'error_rate_limit',
+        )}
+        scenario.update(initial_concurrency=110, max_concurrency=110, timeout_ms=3000)
+        assert client.put(scenario_path, json=scenario, headers=ctx['headers']).status_code == 200
+        execution_id = _create_execution(client, ctx)
+        base = f'{scenario_path}/executions/{execution_id}'
+        assert client.post(base+'/start', headers=ctx['headers']).status_code == 200
+        status = _wait_terminal(client, ctx, execution_id)
+        assert status == 'COMPLETED', client.get(base, headers=ctx['headers']).json()
+        assert ConcurrentHandler.peak >= 105
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_manual_complete_blocked_while_engine_active(api, target) -> None:

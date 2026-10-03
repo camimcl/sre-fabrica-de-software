@@ -7,17 +7,29 @@ writes use the existing synchronous Session executed off the event loop via
 
 import asyncio
 import math
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_engine
-from app.db.types import ExecutionStatus
+from app.db.types import (
+    ControlAction,
+    ControlStrategy,
+    ExecutionStatus,
+    ModelStatus,
+)
+from app.modules.control.contracts import ControlInput, RulesController
+from app.modules.control.models import ControlDecision
+from app.modules.intelligence.contracts import RiskPredictor
+from app.modules.intelligence.dataset import features_from_window
+from app.modules.intelligence.models import ModelVersion, RiskPrediction
+from app.modules.intelligence.predictor import SklearnRiskPredictor
 from app.modules.load_tests.models import TestExecution
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint
@@ -169,10 +181,13 @@ def _load_plan(execution_id: UUID) -> dict | None:
         )
         return {
             "duration_seconds": execution.duration_seconds,
+            "strategy": execution.strategy,
             "initial_concurrency": execution.initial_concurrency,
             "max_concurrency": execution.max_concurrency,
-            "ramp_up_per_window": scenario.ramp_up_per_window if scenario else 0,
+            "ramp_up_per_window": execution.ramp_up_per_window,
             "timeout_ms": execution.timeout_ms,
+            "p95_limit_ms": execution.p95_limit_ms,
+            "error_rate_limit": float(execution.error_rate_limit),
             "base_url": endpoint.base_url if endpoint else None,
             "http_method": endpoint.http_method if endpoint else "GET",
             "authorization_confirmed": (
@@ -181,10 +196,109 @@ def _load_plan(execution_id: UUID) -> dict | None:
         }
 
 
-def _persist_window(values: dict) -> None:
+def _persist_window(values: dict) -> UUID:
     with Session(get_engine()) as db:
-        db.add(MetricWindow(**values))
+        window = MetricWindow(**values)
+        db.add(window)
         db.commit()
+        db.refresh(window)
+        return window.id
+
+
+def _load_approved_predictor(
+    execution_id: UUID,
+) -> tuple[UUID | None, RiskPredictor | None]:
+    with Session(get_engine()) as db:
+        execution = db.get(TestExecution, execution_id)
+        if execution is None or execution.strategy != ControlStrategy.AI_HYBRID:
+            return None, None
+        model = db.scalar(
+            select(ModelVersion)
+            .where(ModelVersion.status == ModelStatus.APPROVED)
+            .order_by(ModelVersion.created_at.desc())
+        )
+        if model is None:
+            return None, None
+        try:
+            predictor = SklearnRiskPredictor(model)
+        except Exception:
+            return None, None
+        execution.model_version_id = model.id
+        db.commit()
+        return model.id, predictor
+
+
+def _evaluate_and_persist(
+    *,
+    execution_id: UUID,
+    metric_window_id: UUID,
+    predictor: RiskPredictor | None,
+    model_version_id: UUID | None,
+) -> int:
+    with Session(get_engine()) as db:
+        execution = db.get(TestExecution, execution_id)
+        window = db.get(MetricWindow, metric_window_id)
+        if execution is None or window is None:
+            raise RuntimeError("Execution metric window was not found")
+        previous = db.scalar(
+            select(MetricWindow).where(
+                MetricWindow.execution_id == execution_id,
+                MetricWindow.sequence_number == window.sequence_number - 1,
+            )
+        )
+        features = features_from_window(window, previous)
+        prediction_row: RiskPrediction | None = None
+        risk: float | None = None
+        strategy = ControlStrategy.RULES
+        fallback_reason: str | None = None
+
+        if execution.strategy == ControlStrategy.AI_HYBRID:
+            if predictor is None or model_version_id is None:
+                fallback_reason = "Fallback por regras: nao ha modelo aprovado e valido. "
+            else:
+                try:
+                    result = predictor.predict_risk(features)
+                except Exception:
+                    fallback_reason = "Fallback por regras: a inferencia local falhou. "
+                else:
+                    risk = result.probability
+                    prediction_row = RiskPrediction(
+                        metric_window_id=window.id,
+                        model_version_id=model_version_id,
+                        risk_probability=Decimal(str(round(result.probability, 5))),
+                        predicted_degradation=result.predicted_degradation,
+                        inference_latency_ms=result.inference_latency_ms,
+                    )
+                    db.add(prediction_row)
+                    db.flush()
+                    strategy = ControlStrategy.AI_HYBRID
+
+        controller = RulesController(
+            increase_step=max(1, execution.ramp_up_per_window)
+        )
+        result = controller.decide(
+            ControlInput(
+                concurrency=window.concurrency,
+                max_concurrency=execution.max_concurrency,
+                error_rate=float(window.error_rate),
+                error_rate_limit=float(execution.error_rate_limit),
+                p95_ms=float(window.latency_p95_ms),
+                p95_limit_ms=float(execution.p95_limit_ms),
+                risk=risk,
+            )
+        )
+        decision = ControlDecision(
+            metric_window_id=window.id,
+            risk_prediction_id=prediction_row.id if prediction_row else None,
+            strategy=strategy,
+            action=ControlAction(result.action),
+            previous_concurrency=result.previous_concurrency,
+            next_concurrency=result.next_concurrency,
+            reason=(fallback_reason or "") + result.reason,
+        )
+        db.add(decision)
+        db.commit()
+        return result.next_concurrency
 
 
 def _finalize_execution(
@@ -220,13 +334,16 @@ async def _fire_one(
     loop = asyncio.get_event_loop()
     start = loop.time()
     try:
-        response = await client.request(method, url)
-        latency_ms = (loop.time() - start) * 1000
-        return RequestOutcome(
-            latency_ms=latency_ms,
-            is_success=response.status_code < 400,
-            is_timeout=False,
-        )
+        # Streaming closes the response without retaining an arbitrarily large
+        # body in memory. LoadForge measures response headers/status, not body
+        # content, so buffering the payload would only increase resource use.
+        async with client.stream(method, url) as response:
+            latency_ms = (loop.time() - start) * 1000
+            return RequestOutcome(
+                latency_ms=latency_ms,
+                is_success=response.status_code < 400,
+                is_timeout=False,
+            )
     except httpx.TimeoutException:
         latency_ms = (loop.time() - start) * 1000
         return RequestOutcome(latency_ms=latency_ms, is_success=False, is_timeout=True)
@@ -253,8 +370,17 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
         total_ms = plan["duration_seconds"] * 1000
         timeout_s = plan["timeout_ms"] / 1000
         cancelled = False
+        model_version_id, predictor = await asyncio.to_thread(
+            _load_approved_predictor, execution_id
+        )
+        current_concurrency = plan["initial_concurrency"]
 
-        async with httpx.AsyncClient(timeout=timeout_s) as client:
+        limits = httpx.Limits(
+            max_connections=plan['max_concurrency'],
+            max_keepalive_connections=plan['max_concurrency'],
+        )
+        async with httpx.AsyncClient(timeout=timeout_s, limits=limits) as client:
+            execution_clock_started = asyncio.get_running_loop().time()
             elapsed_ms = 0
             window_index = 0
             while elapsed_ms < total_ms:
@@ -263,9 +389,15 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                     break
                 # Last window uses only the remaining configured time.
                 window_ms = min(WINDOW_DURATION_MS, total_ms - elapsed_ms)
-                concurrency = _concurrency_for_window(plan, window_index)
+                concurrency = (
+                    _concurrency_for_window(plan, window_index)
+                    if plan["strategy"] == ControlStrategy.FIXED
+                    else current_concurrency
+                )
                 aggregator = WindowAggregator()
                 window_started = _now()
+                loop = asyncio.get_running_loop()
+                window_clock_started = loop.time()
                 await _run_window(
                     client=client,
                     method=plan["http_method"],
@@ -275,15 +407,26 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                     aggregator=aggregator,
                     cancel_event=cancel_event,
                 )
+                observed_window_ms = max(
+                    1, round((loop.time() - window_clock_started) * 1000)
+                )
                 snapshot = aggregator.snapshot(
                     execution_id=execution_id,
                     sequence_number=window_index,
                     started_at=window_started,
-                    duration_ms=window_ms,
+                    duration_ms=observed_window_ms,
                     concurrency=concurrency,
                 )
-                await asyncio.to_thread(_persist_window, snapshot)
-                elapsed_ms += window_ms
+                metric_window_id = await asyncio.to_thread(_persist_window, snapshot)
+                if plan["strategy"] != ControlStrategy.FIXED:
+                    current_concurrency = await asyncio.to_thread(
+                        _evaluate_and_persist,
+                        execution_id=execution_id,
+                        metric_window_id=metric_window_id,
+                        predictor=predictor,
+                        model_version_id=model_version_id,
+                    )
+                elapsed_ms = (loop.time() - execution_clock_started) * 1000
                 window_index += 1
                 if cancel_event.is_set():
                     cancelled = True
@@ -299,6 +442,11 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
             await asyncio.to_thread(
                 _finalize_execution, execution_id, ExecutionStatus.COMPLETED
             )
+    except SQLAlchemyError:
+        await asyncio.to_thread(
+            _finalize_execution, execution_id, ExecutionStatus.FAILED,
+            'Falha de persistência durante a execução.',
+        )
     except Exception:
         await asyncio.to_thread(
             _finalize_execution, execution_id, ExecutionStatus.FAILED
@@ -320,20 +468,13 @@ async def _run_window(
     """Keep `concurrency` requests in flight until the window elapses."""
     loop = asyncio.get_event_loop()
     deadline = loop.time() + window_seconds
-    semaphore = asyncio.Semaphore(concurrency)
-
     async def worker() -> None:
-        async with semaphore:
+        while loop.time() < deadline and not cancel_event.is_set():
             outcome = await _fire_one(client, method, url)
             aggregator.add(outcome)
 
-    pending: set[asyncio.Task] = set()
-    while loop.time() < deadline and not cancel_event.is_set():
-        if len(pending) < concurrency:
-            pending.add(asyncio.create_task(worker()))
-        _, pending = await asyncio.wait(
-            pending, timeout=0.01, return_when=asyncio.FIRST_COMPLETED
-        )
-    # Drain in-flight requests without starting new ones.
-    if pending:
-        await asyncio.gather(*pending, return_exceptions=True)
+    # One long-lived worker per configured concurrent slot avoids the previous
+    # ramp-up race in which only one request was often active against fast
+    # targets. In-flight calls are drained when the window or stop signal ends.
+    workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
+    await asyncio.gather(*workers, return_exceptions=True)

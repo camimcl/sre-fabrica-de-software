@@ -12,13 +12,13 @@ class ScenarioWrite(BaseModel):
 
     name: str = Field(min_length=1, max_length=120)
     endpoint_id: UUID
-    duration_seconds: int = Field(ge=1)
-    initial_concurrency: int = Field(ge=1)
-    max_concurrency: int = Field(ge=1)
-    ramp_up_per_window: int = Field(ge=0)
-    timeout_ms: int = Field(ge=1)
+    duration_seconds: int = Field(ge=1, le=3600)
+    initial_concurrency: int = Field(ge=1, le=500)
+    max_concurrency: int = Field(ge=1, le=500)
+    ramp_up_per_window: int = Field(ge=0, le=500)
+    timeout_ms: int = Field(ge=1, le=60000)
     strategy: ControlStrategy
-    p95_limit_ms: int = Field(ge=1)
+    p95_limit_ms: int = Field(ge=1, le=300000)
     error_rate_limit: Decimal = Field(ge=0, le=1)
 
     @field_validator("name")
@@ -120,6 +120,7 @@ class ExecutionResponse(BaseModel):
     duration_seconds: int
     initial_concurrency: int
     max_concurrency: int
+    ramp_up_per_window: int
     timeout_ms: int
     p95_limit_ms: int
     error_rate_limit: Decimal

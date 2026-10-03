@@ -244,11 +244,11 @@ def render_entity_diagram(relational: bool) -> None:
             "projects": ("projects", ("PK id", "FK owner_id -> users.id", "name", "description"), PALE),
             "endpoints": ("endpoints", ("PK id", "FK project_id -> projects.id", "base_url", "authorization_confirmed"), PALE),
             "scenario": ("test_scenarios", ("PK id", "FK project_id -> projects.id", "FK endpoint_id -> endpoints.id", "FK created_by -> users.id", "strategy e limites"), PALE),
-            "execution": ("test_executions", ("PK id", "FK scenario_id -> test_scenarios.id", "FK initiated_by -> users.id", "FK model_version_id -> model_versions.id", "status e strategy"), PALE),
+            "execution": ("test_executions", ("PK id", "FK scenario_id -> test_scenarios.id", "FK initiated_by -> users.id", "FK model_version_id -> model_versions.id", "status strategy e ramp-up"), PALE),
             "metric": ("metric_windows", ("PK id", "FK execution_id -> test_executions.id", "UK execution_id + sequence", "throughput p95 error CPU"), PALE),
             "report": ("execution_reports", ("PK id", "FK UK execution_id -> test_executions.id", "totals e throughput", "p95 error summary"), PALE),
             "decision": ("control_decisions", ("PK id", "FK UK metric_window_id -> metric_windows.id", "FK UK risk_prediction_id -> risk_predictions.id", "action concurrency reason"), PALE_ORANGE),
-            "model": ("model_versions", ("PK id", "UK version", "algorithm e status", "precision recall F1"), PALE_PURPLE),
+            "model": ("model_versions", ("PK id", "UK version", "algorithm status e amostras", "precision recall F1 accuracy", "hashes de dados e artefato"), PALE_PURPLE),
             "prediction": ("risk_predictions", ("PK id", "FK UK metric_window_id -> metric_windows.id", "FK model_version_id -> model_versions.id", "probability e latency"), PALE_PURPLE),
         }
     else:

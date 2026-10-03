@@ -1,0 +1,11 @@
+{
+  "fluxo-api.json": "a216f24a8e593c3522886797eada7092fdc695a02a5907c1b9e14ab228088fce",
+  "browser-evidence.json": "9b62d36265e0499a975f49e0f463d185e87f4686aac7f9b965b8703267d7a65d",
+  "monitor-hibrido.png": "c36985d43bc3adda035757b8de8228a30b6a2ba9203e5c767d69c09b213cad1c",
+  "modelo-aprovado.png": "3d6a83157a2e9b1ab2b14d4823a559df47086f5cc8292a5d2438dbfb20673327",
+  "monitor-regras.png": "924b7595ce73442a4011bd926264e3048929599153ef5035d01163dc4da83126",
+  "execucao-cancelada.png": "3b25511a216caa38c22f57f174189fa83c7b45039076cc69d12c69c5f0444eb7",
+  "navigation-race.json": "739dcb7a365601191f0345cabf0eb6afb32992a54a0e1b306f11768889cfa29c",
+  "navigation-race.txt": "6cb2ddae502c02dbbdb34c217be6bc8aa7c28d650ac0524d4a3303f3aca9d894",
+  "pytest-postgres.xml": "3830449cbd3c7eaf118574fa80e7e1a83d1b906f078e33160bf6cc37fdef6ca6"
+}

@@ -1,0 +1,2 @@
+PASS: resposta atrasada não troca a execução nem o monitor do cenário selecionado.
+PASS: respostas acima de 2 segundos atualizam métricas e estado terminal.
