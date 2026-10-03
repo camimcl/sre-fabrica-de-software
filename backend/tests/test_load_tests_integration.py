@@ -10,13 +10,13 @@ import threading
 import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core.security import hash_password
 from app.db import models  # noqa: F401
@@ -57,14 +57,13 @@ def target() -> Iterator[str]:
 
 
 @pytest.fixture
-def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, sessionmaker]]:
+def api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[tuple[TestClient, sessionmaker]]:
     monkeypatch.setenv(
         "LOADFORGE_TOKEN_SECRET", "test-only-secret-value-with-at-least-32-bytes"
     )
     db_engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
+        f"sqlite+pysqlite:///{(tmp_path / 'integration.sqlite').as_posix()}",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
     )
     Base.metadata.create_all(db_engine)
     factory = sessionmaker(bind=db_engine, expire_on_commit=False)
@@ -75,7 +74,9 @@ def api(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, sessionma
 
     # Engine stays ENABLED to exercise the real integrated flow. The engine's
     # background persistence resolves its own engine via load_engine.get_engine;
-    # point it at the same in-memory database the API uses.
+    # point it at the same isolated database the API uses. Separate pooled
+    # connections prevent a polling session's rollback from undoing an engine
+    # write, which can happen when concurrent sessions share StaticPool.
     monkeypatch.setattr(load_engine, "get_engine", lambda: db_engine)
     app.dependency_overrides[get_db] = session_override
     with TestClient(app) as client:
@@ -259,7 +260,8 @@ def test_configured_concurrency_above_default_http_pool(api) -> None:
         execution_id = _create_execution(client, ctx)
         base = f'{scenario_path}/executions/{execution_id}'
         assert client.post(base+'/start', headers=ctx['headers']).status_code == 200
-        assert _wait_terminal(client, ctx, execution_id) == 'COMPLETED'
+        status = _wait_terminal(client, ctx, execution_id)
+        assert status == 'COMPLETED', client.get(base, headers=ctx['headers']).json()
         assert ConcurrentHandler.peak >= 105
     finally:
         server.shutdown()

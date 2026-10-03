@@ -116,6 +116,7 @@ Os testes do motor usam um alvo HTTP local descartável; nenhuma carga automatiz
 | Base histórica incompatível falhava somente ao criar as constraints. | Pré-verificação transacional com contagens e abortamento antes das alterações. |
 | Novas consultas do monitor invalidavam continuamente respostas lentas. | Polling sequencial, reagendado depois da conclusão da consulta anterior. |
 | Metadados tratavam cinco janelas variáveis como dez segundos fixos. | Contrato explicitado em janelas, duração nominal e extremos reais registrados; timestamps no fim da observação. |
+| O teste de concorrência falhava intermitentemente porque sessões simultâneas compartilhavam uma única conexão SQLite. | Banco temporário por teste com conexões independentes, impedindo que o encerramento de uma leitura desfaça a gravação do motor. O caso de 110 conexões passou em dez repetições consecutivas. |
 
 O horizonte é de cinco janelas futuras, nominalmente dez segundos. Janelas que drenam requisições lentas podem durar mais; os metadados novos registram essa variação. Não há garantia de previsão em exatamente dez segundos. O teste de regressão com janelas de quatro segundos confirma um horizonte observado de vinte segundos, sem rotulá-lo como dez.
 
