@@ -135,7 +135,7 @@ O módulo de testes de carga (`load_tests`) foi implementado com CRUD de cenári
 
 ## Sprint 05
 
-O segundo módulo funcional integra `intelligence` e `control` ao motor de carga. A aplicação forma um conjunto de dados próprio com as janelas persistidas, rotula a ocorrência de degradação nos dez segundos futuros, compara dois algoritmos locais e armazena a versão candidata com precisão, recall, F1, acurácia e hashes do conjunto e do artefato. Um QA pode aprovar uma versão; as execuções `AI_HYBRID` passam a persistir uma previsão e uma decisão por janela, enquanto a ausência ou falha do modelo ativa o fallback por regras sem interromper o teste.
+O segundo módulo funcional integra `intelligence` e `control` ao motor de carga. A aplicação forma um conjunto de dados próprio com as janelas persistidas, rotula a ocorrência de degradação nas cinco janelas futuras, nominalmente dez segundos e com duração observada variável, compara dois algoritmos locais e armazena a versão candidata com precisão, recall, F1, acurácia e hashes do conjunto e do artefato. Um QA pode aprovar uma versão; as execuções `AI_HYBRID` passam a persistir uma previsão e uma decisão por janela, enquanto a ausência ou falha do modelo ativa o fallback por regras sem interromper o teste.
 
 O painel React agora permite criar cenários, iniciar e interromper execuções, acompanhar métricas, riscos e decisões e administrar versões do modelo. A explicação técnica, as regras atualizadas, os testes e o registro de bugs estão no [Relatório Técnico da Sprint 05](docs/relatorio-sprint-05.md).
 

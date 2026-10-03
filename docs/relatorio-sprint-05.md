@@ -54,7 +54,7 @@ Na execução híbrida `a45e7cef-db67-4ba4-a903-507ca824b2b5`, foram recuperadas
 
 | Regra | Decisão e justificativa |
 |---|---|
-| Horizonte preditivo | Cinco janelas de dois segundos, preservando o objetivo de antecipar degradação em dez segundos. |
+| Horizonte preditivo | Cinco janelas futuras, nominalmente dez segundos, com duração observada variável; não há garantia de antecipação em dez segundos exatos. |
 | Base mínima | O treino exige ao menos 20 amostras e as duas classes nas partições cronológicas; sem isso, retorna conflito e não produz um modelo enganoso. |
 | Aprovação única | Aprovar um candidato aposenta a versão anterior, permitindo saber exatamente qual modelo orientou uma execução. |
 | Integridade do artefato | Caminho restrito ao diretório de modelos e validação de versão, esquema de atributos e SHA-256 antes de carregar `joblib`. |
