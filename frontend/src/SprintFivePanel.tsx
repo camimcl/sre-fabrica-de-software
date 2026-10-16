@@ -60,6 +60,12 @@ type ModelVersion = {
   recall_score: string | null
   accuracy_score: string | null
   training_sample_count: number
+  notes: string | null
+}
+type ModelEvidence = {
+  recall_target?: number
+  recall_target_met?: boolean
+  decision_threshold?: number
 }
 type ScenarioForm = {
   name: string
@@ -85,6 +91,15 @@ const emptyForm: ScenarioForm = {
   strategy: 'AI_HYBRID',
   p95_limit_ms: 800,
   error_rate_limit: '0.05000',
+}
+
+function parseModelEvidence(notes: string | null): ModelEvidence | null {
+  if (!notes) return null
+  try {
+    return JSON.parse(notes) as ModelEvidence
+  } catch {
+    return null
+  }
 }
 
 type Props = {
@@ -121,6 +136,10 @@ export default function SprintFivePanel({
 
   const selectedExecution = executions.find((row) => row.id === executionId)
   const approvedModel = models.find((model) => model.status === 'APPROVED')
+  const modelEvidence = useMemo(
+    () => parseModelEvidence(approvedModel?.notes ?? null),
+    [approvedModel],
+  )
   const predictionByWindow = useMemo(
     () => new Map(predictions.map((prediction) => [prediction.metric_window_id, prediction])),
     [predictions],
@@ -371,9 +390,10 @@ export default function SprintFivePanel({
 
         <div className="adaptive-column">
           <div className="subsection-heading"><h3>Modelos locais</h3><span>{models.length}</span></div>
-          {models.length ? <div className="model-list">{models.map((model) => <article key={model.id}><div><strong>{model.algorithm}</strong><small>{model.version} · {model.training_sample_count} amostras</small><small>F1 {model.f1_score ?? '—'} · recall {model.recall_score ?? '—'} · acurácia {model.accuracy_score ?? '—'}</small></div><span className={`model-status ${model.status.toLowerCase()}`}>{model.status}</span>{isQa && model.status === 'CANDIDATE' && <button disabled={busy === model.id} onClick={() => approveModel(model.id)}>Aprovar</button>}</article>)}</div> : <p className="empty compact">Ainda não há versão treinada.</p>}
+          {models.length ? <div className="model-list">{models.map((model) => { const evidence = parseModelEvidence(model.notes); const target = evidence?.recall_target ?? 0.8; const met = Number(model.recall_score ?? 0) >= target; return <article key={model.id}><div><strong>{model.algorithm}</strong><small>{model.version} · {model.training_sample_count} amostras</small><small>F1 {model.f1_score ?? '—'} · recall {model.recall_score ?? '—'} · meta {target.toFixed(2)}</small></div><span className={`model-status ${model.status.toLowerCase()}`}>{model.status}</span><span className={met ? 'target-met' : 'target-missed'}>{met ? 'Meta de recall atingida' : 'Recall abaixo da meta'}</span>{isQa && model.status === 'CANDIDATE' && <button disabled={busy === model.id || !met} title={!met ? 'A aprovação exige recall mínimo de 0,80' : undefined} onClick={() => approveModel(model.id)}>Aprovar</button>}</article> })}</div> : <p className="empty compact">Ainda não há versão treinada.</p>}
           {isQa && <button className="primary train-button" disabled={busy === 'train'} onClick={trainModel}>Treinar nova versão</button>}
-          <p className="helper">O treinamento exige ao menos 20 amostras temporais e as duas classes de resultado.</p>
+          <p className="helper">O treinamento exige ao menos 20 amostras temporais e as duas classes. Novas aprovações exigem recall mínimo de 0,80.</p>
+          {approvedModel && <p className="model-evidence">Limiar de decisão: {modelEvidence?.decision_threshold?.toFixed(2) ?? 'legado (0,50)'} · meta {modelEvidence?.recall_target?.toFixed(2) ?? '0,80'}.</p>}
         </div>
       </div>
 

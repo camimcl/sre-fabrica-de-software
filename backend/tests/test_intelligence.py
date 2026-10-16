@@ -23,8 +23,14 @@ from app.modules.intelligence.predictor import (
     ArtifactValidationError,
     SklearnRiskPredictor,
 )
-from app.modules.intelligence.training import approve_candidate, train_candidate
-from app.modules.intelligence.training import chronological_partitions, TrainingDataError
+from app.modules.intelligence.training import (
+    RECALL_TARGET,
+    TrainingDataError,
+    approve_candidate,
+    chronological_partitions,
+    select_decision_threshold,
+    train_candidate,
+)
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
@@ -171,6 +177,16 @@ def test_training_rejects_insufficient_data(db: Session):
         train_candidate(db)
 
 
+def test_threshold_selection_prioritizes_declared_recall_target() -> None:
+    score = select_decision_threshold(
+        [0, 0, 1, 1, 1, 1, 1],
+        [0.10, 0.30, 0.25, 0.35, 0.45, 0.55, 0.90],
+    )
+    assert score["recall"] >= RECALL_TARGET
+    assert score["recall_target_met"] is True
+    assert 0 < score["threshold"] < 1
+
+
 def test_dataset_excludes_running_executions(db: Session):
     execution = _seed_windows(db)
     execution.status = ExecutionStatus.RUNNING
@@ -186,6 +202,8 @@ def test_train_version_approve_and_predict(db: Session) -> None:
     assert model.training_sample_count == 116
     assert model.algorithm in {"logistic-regression", "random-forest"}
     assert model.f1_score is not None
+    assert model.recall_score is not None
+    assert float(model.recall_score) >= RECALL_TARGET
     assert len(model.training_dataset_hash) == 64
     assert len(model.artifact_sha256) == 64
 
@@ -196,6 +214,15 @@ def test_train_version_approve_and_predict(db: Session) -> None:
     result = predictor.predict_risk(sample.features)
     assert 0 <= result.probability <= 1
     assert result.model_version == model.version
+
+
+def test_approval_rejects_candidate_below_recall_target(db: Session) -> None:
+    _seed_windows(db)
+    model = train_candidate(db)
+    model.recall_score = Decimal("0.79999")
+    db.commit()
+    with pytest.raises(RuntimeError, match="recall must be at least 0.80"):
+        approve_candidate(db, model)
 
 
 def test_approval_retires_previous_model(db: Session) -> None:

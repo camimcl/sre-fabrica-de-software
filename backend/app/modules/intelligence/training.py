@@ -9,7 +9,13 @@ from decimal import Decimal
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sqlalchemy import select
@@ -32,15 +38,50 @@ class TrainingDataError(ValueError):
     pass
 
 
-def _score(estimator, x_test, y_test) -> dict[str, float]:
-    predicted = estimator.predict(x_test)
+RECALL_TARGET = 0.80
+THRESHOLD_CANDIDATES = tuple(index / 100 for index in range(20, 81, 5))
+
+
+def _score_probabilities(
+    y_true: list[int], probabilities: list[float], threshold: float
+) -> dict[str, float]:
+    predicted = [int(probability >= threshold) for probability in probabilities]
     return {
-        "precision": float(precision_score(y_test, predicted, zero_division=0)),
-        "recall": float(recall_score(y_test, predicted, zero_division=0)),
-        "f1": float(f1_score(y_test, predicted, zero_division=0)),
-        "accuracy": float(accuracy_score(y_test, predicted)),
-        "false_positives": int(confusion_matrix(y_test, predicted, labels=[0, 1])[0, 1]),
+        "precision": float(precision_score(y_true, predicted, zero_division=0)),
+        "recall": float(recall_score(y_true, predicted, zero_division=0)),
+        "f1": float(f1_score(y_true, predicted, zero_division=0)),
+        "accuracy": float(accuracy_score(y_true, predicted)),
+        "false_positives": int(confusion_matrix(y_true, predicted, labels=[0, 1])[0, 1]),
+        "threshold": threshold,
+        "recall_target_met": float(recall_score(y_true, predicted, zero_division=0))
+        >= RECALL_TARGET,
     }
+
+
+def select_decision_threshold(
+    y_true: list[int], probabilities: list[float]
+) -> dict[str, float]:
+    """Choose a validation-only threshold, prioritizing the declared recall target."""
+    evaluated = [
+        _score_probabilities(y_true, probabilities, threshold)
+        for threshold in THRESHOLD_CANDIDATES
+    ]
+    target_candidates = [score for score in evaluated if score["recall_target_met"]]
+    pool = target_candidates or evaluated
+    return max(
+        pool,
+        key=lambda score: (
+            score["f1"],
+            score["precision"],
+            score["recall"],
+            score["threshold"],
+        ),
+    )
+
+
+def _score(estimator, x_test, y_test, threshold: float) -> dict[str, float]:
+    probabilities = estimator.predict_proba(x_test)[:, 1].tolist()
+    return _score_probabilities(y_test, probabilities, threshold)
 
 
 def chronological_partitions(samples):
@@ -76,23 +117,38 @@ def train_candidate(db: Session) -> ModelVersion:
 
     candidates = {
         "logistic-regression": make_pipeline(
-            StandardScaler(), LogisticRegression(max_iter=1000, random_state=42)
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=1000, random_state=42, class_weight="balanced"
+            ),
         ),
         "random-forest": RandomForestClassifier(
-            n_estimators=120, max_depth=8, random_state=42, n_jobs=1
+            n_estimators=120,
+            max_depth=8,
+            random_state=42,
+            n_jobs=1,
+            class_weight="balanced",
         ),
     }
     evaluated: list[tuple[str, object, dict[str, float]]] = []
     for name, estimator in candidates.items():
         estimator.fit(x_train, y_train)
-        evaluated.append((name, estimator, _score(estimator, x_validation, y_validation)))
-    algorithm, estimator, _ = max(
+        probabilities = estimator.predict_proba(x_validation)[:, 1].tolist()
+        evaluated.append(
+            (name, estimator, select_decision_threshold(y_validation, probabilities))
+        )
+    algorithm, estimator, validation_metrics = max(
         evaluated,
         key=lambda item: (
-            item[2]["f1"], item[2]["recall"], item[2]["precision"], item[0]
+            item[2]["recall_target_met"],
+            item[2]["f1"],
+            item[2]["recall"],
+            item[2]["precision"],
+            item[0],
         ),
     )
-    metrics = _score(estimator, x_test, y_test)
+    decision_threshold = validation_metrics["threshold"]
+    metrics = _score(estimator, x_test, y_test, decision_threshold)
 
     dataset_hash = dataset_sha256(samples)
     version = datetime.now(timezone.utc).strftime("lf-%Y%m%d%H%M%S%f")
@@ -105,6 +161,7 @@ def train_candidate(db: Session) -> ModelVersion:
             "version": version,
             "feature_names": FEATURE_NAMES,
             "estimator": estimator,
+            "decision_threshold": decision_threshold,
         },
         path,
     )
@@ -123,6 +180,9 @@ def train_candidate(db: Session) -> ModelVersion:
             "validation_samples": len(validation),
             "test_samples": len(test),
             "purged_samples": len(samples) - len(train) - len(validation) - len(test),
+            "recall_target": RECALL_TARGET,
+            "decision_threshold": decision_threshold,
+            "recall_target_met": metrics["recall_target_met"],
             "test_metrics": metrics,
             "evaluated": {name: score for name, _, score in evaluated},
         },
@@ -151,6 +211,10 @@ def train_candidate(db: Session) -> ModelVersion:
 def approve_candidate(db: Session, model: ModelVersion) -> ModelVersion:
     from app.modules.intelligence.predictor import SklearnRiskPredictor
 
+    if model.recall_score is None or float(model.recall_score) < RECALL_TARGET:
+        raise RuntimeError(
+            f"Model recall must be at least {RECALL_TARGET:.2f} before approval"
+        )
     SklearnRiskPredictor(model)  # validate before changing approval state
     for approved in db.scalars(
         select(ModelVersion).where(ModelVersion.status == ModelStatus.APPROVED)
