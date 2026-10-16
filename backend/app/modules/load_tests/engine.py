@@ -6,6 +6,7 @@ writes use the existing synchronous Session executed off the event loop via
 """
 
 import asyncio
+import json
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -179,7 +180,14 @@ def _load_plan(execution_id: UUID) -> dict | None:
         endpoint = (
             db.get(Endpoint, scenario.endpoint_id) if scenario is not None else None
         )
-        return {
+        if endpoint is not None:
+            execution.target_snapshot = json.dumps({
+                "endpoint_id": str(endpoint.id),
+                "base_url": endpoint.base_url,
+                "http_method": endpoint.http_method,
+                "window_duration_ms": WINDOW_DURATION_MS,
+            }, sort_keys=True)
+        plan = {
             "duration_seconds": execution.duration_seconds,
             "strategy": execution.strategy,
             "initial_concurrency": execution.initial_concurrency,
@@ -194,6 +202,8 @@ def _load_plan(execution_id: UUID) -> dict | None:
                 endpoint.authorization_confirmed if endpoint else False
             ),
         }
+        db.commit()
+        return plan
 
 
 def _persist_window(values: dict) -> UUID:

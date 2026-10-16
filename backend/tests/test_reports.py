@@ -1,4 +1,5 @@
 import json
+import os
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -7,7 +8,8 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -21,7 +23,7 @@ from app.modules.auth.models import User
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
-from app.modules.reports.models import ComparisonReportExecution, ExecutionReport
+from app.modules.reports.models import ComparisonReport, ComparisonReportExecution, ExecutionReport
 from app.modules.reports.service import (
     create_comparison_report,
     generate_execution_report,
@@ -131,6 +133,12 @@ def _seed_experiment(db: Session) -> tuple[Project, User, list[TestExecution]]:
                 p95_limit_ms=500,
                 error_rate_limit=Decimal("0.10"),
                 authorization_acknowledged=True,
+                target_snapshot=json.dumps({
+                    "endpoint_id": str(endpoint.id),
+                    "base_url": endpoint.base_url,
+                    "http_method": endpoint.http_method,
+                    "window_duration_ms": 2000,
+                }),
                 started_at=start,
                 ended_at=start + timedelta(seconds=30),
             )
@@ -216,6 +224,9 @@ def test_comparison_persists_strategy_statistics_and_deltas(db: Session) -> None
     assert results["FIXED"]["runs"] == 3
     assert results["RULES"]["runs"] == 3
     assert results["AI_HYBRID"]["runs"] == 3
+    assert results["ai_evidence"]["unverified_windows"] == 9
+    assert results["ai_evidence"]["inference_windows"] == 0
+    assert "cannot be attributed exclusively" in comparison.conclusion
     assert results["AI_HYBRID"]["throughput_rps"]["mean"] > results["FIXED"]["throughput_rps"]["mean"]
     assert results["AI_HYBRID"]["latency_p95_ms"]["mean"] < results["RULES"]["latency_p95_ms"]["mean"]
     assert results["comparisons"]["AI_HYBRID_vs_FIXED"]["throughput_change_percent"] > 0
@@ -273,3 +284,109 @@ def test_report_api_exposes_integrated_history_and_comparison(
     )
     assert detail.status_code == 200, detail.text
     assert detail.json()["conditions_fingerprint"] == comparison["conditions_fingerprint"]
+    path = f"/projects/{project_id}/reports/comparisons"
+    payload = {"name": "Another", "execution_ids": execution_ids}
+    assert client.post(path, json=payload).status_code == 401
+    assert client.post(path, json={**payload, "name": "   "}, headers=headers).status_code == 422
+    assert client.post(path, json={**payload, "execution_ids": [execution_ids[0]] * 9}, headers=headers).status_code == 422
+    assert client.post(path, json={**payload, "execution_ids": execution_ids[:-1] + [str(uuid4())]}, headers=headers).status_code == 404
+    with factory() as db:
+        viewer = db.get(User, user.id)
+        viewer.role = UserRole.VIEWER
+        db.commit()
+    assert client.post(path, json=payload, headers=headers).status_code == 403
+    assert client.get(path, headers=headers).status_code == 200
+
+
+def test_comparison_uses_recorded_target_not_mutable_endpoint(db: Session) -> None:
+    project, user, executions = _seed_experiment(db)
+    endpoint = db.scalar(select(Endpoint).where(Endpoint.project_id == project.id))
+    endpoint.base_url = "http://127.0.0.1:9998/changed"
+    db.commit()
+    comparison = create_comparison_report(
+        db, project_id=project.id, created_by=user.id, name="Original target",
+        execution_ids=[execution.id for execution in executions],
+    )
+    assert json.loads(comparison.conditions_json)["target"]["base_url"] == "http://127.0.0.1:9999"
+    target = json.loads(executions[-1].target_snapshot)
+    target["base_url"] = endpoint.base_url
+    executions[-1].target_snapshot = json.dumps(target)
+    db.commit()
+    with pytest.raises(HTTPException, match="equivalent"):
+        create_comparison_report(
+            db, project_id=project.id, created_by=user.id, name="Changed target",
+            execution_ids=[execution.id for execution in executions],
+        )
+
+
+@pytest.mark.parametrize("snapshot", [None, "invalid", "{}"])
+def test_comparison_rejects_unverifiable_legacy_target(db: Session, snapshot) -> None:
+    project, user, executions = _seed_experiment(db)
+    executions[-1].target_snapshot = snapshot
+    db.commit()
+    with pytest.raises(HTTPException, match="recorded target snapshot"):
+        create_comparison_report(
+            db, project_id=project.id, created_by=user.id, name="Legacy",
+            execution_ids=[execution.id for execution in executions],
+        )
+
+
+def test_comparison_discloses_rules_fallback(db: Session) -> None:
+    from app.modules.control.models import ControlDecision
+    from app.db.types import ControlAction
+
+    project, user, executions = _seed_experiment(db)
+    ai_ids = [execution.id for execution in executions if execution.strategy == ControlStrategy.AI_HYBRID]
+    for window in db.scalars(select(MetricWindow).where(MetricWindow.execution_id.in_(ai_ids))):
+        db.add(ControlDecision(
+            metric_window_id=window.id, strategy=ControlStrategy.RULES,
+            action=ControlAction.HOLD, previous_concurrency=2, next_concurrency=2,
+            reason="No approved model",
+        ))
+    db.commit()
+    comparison = create_comparison_report(
+        db, project_id=project.id, created_by=user.id, name="Fallback",
+        execution_ids=[execution.id for execution in executions],
+    )
+    evidence = json.loads(comparison.results_json)["ai_evidence"]
+    assert evidence["fallback_windows"] == 9
+    assert evidence["unverified_windows"] == 0
+    assert "cannot be attributed exclusively" in comparison.conclusion
+
+
+@pytest.mark.integration
+def test_comparison_survives_postgres_reconnection(monkeypatch) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    configured = os.getenv("LOADFORGE_TEST_DATABASE_URL")
+    if not configured:
+        pytest.skip("LOADFORGE_TEST_DATABASE_URL is not set")
+    url = make_url(configured)
+    if not (url.database or "").endswith("_test"):
+        pytest.fail("Integration tests require a database ending in _test")
+    schema = "reports_" + uuid4().hex
+    admin = create_engine(url)
+    with admin.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    isolated = url.update_query_dict({"options": f"-csearch_path={schema}"})
+    database = create_engine(isolated)
+    monkeypatch.setenv("DATABASE_URL", isolated.render_as_string(hide_password=False))
+    try:
+        command.upgrade(Config("alembic.ini"), "head")
+        with Session(database, expire_on_commit=False) as db:
+            project, user, executions = _seed_experiment(db)
+            report = create_comparison_report(
+                db, project_id=project.id, created_by=user.id, name="Persistence",
+                execution_ids=[execution.id for execution in executions],
+            )
+            report_id, expected = report.id, report.results_json
+        database.dispose()
+        with Session(database) as reopened:
+            assert reopened.get(ComparisonReport, report_id).results_json == expected
+            assert len(list(reopened.scalars(select(ComparisonReportExecution)))) == 9
+    finally:
+        database.dispose()
+        with admin.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin.dispose()

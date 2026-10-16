@@ -181,6 +181,47 @@ def test_start_runs_engine_and_persists_metrics(api, target) -> None:
     assert windows[0]["request_count"] > 0
 
 
+def test_repeated_real_executions_integrate_with_reports(api, target) -> None:
+    client, factory = api
+    ctx = _bootstrap(client, factory, target)
+    scenario_path = f"/projects/{ctx['project_id']}/scenarios/{ctx['scenario_id']}"
+    scenario = client.get(scenario_path, headers=ctx['headers']).json()
+    payload = {key: scenario[key] for key in (
+        'name', 'endpoint_id', 'duration_seconds', 'initial_concurrency',
+        'max_concurrency', 'ramp_up_per_window', 'timeout_ms', 'strategy',
+        'p95_limit_ms', 'error_rate_limit',
+    )}
+    execution_ids = []
+    # Rotate order between repetitions. This verifies integration, not AI benefit:
+    # the isolated fixture intentionally has no approved model.
+    strategies = ['FIXED', 'RULES', 'AI_HYBRID']
+    for repetition in range(3):
+        for strategy in strategies[repetition:] + strategies[:repetition]:
+            payload['strategy'] = strategy
+            assert client.put(scenario_path, json=payload, headers=ctx['headers']).status_code == 200
+            execution_id = _create_execution(client, ctx)
+            assert client.post(f'{scenario_path}/executions/{execution_id}/start', headers=ctx['headers']).status_code == 200
+            assert _wait_terminal(client, ctx, execution_id) == 'COMPLETED'
+            execution_ids.append(execution_id)
+    reports_path = f"/projects/{ctx['project_id']}/reports"
+    response = client.post(f'{reports_path}/comparisons', headers=ctx['headers'], json={
+        'name': 'Real local HTTP integration; AI uses fallback',
+        'execution_ids': execution_ids,
+    })
+    assert response.status_code == 201, response.text
+    comparison = response.json()
+    assert comparison['results']['ai_evidence']['fallback_windows'] >= 3
+    assert comparison['results']['ai_evidence']['inference_windows'] == 0
+    assert 'cannot be attributed exclusively' in comparison['conclusion']
+    assert comparison['conditions']['target']['base_url'] == target
+    # A separate request/session must recover the persisted result unchanged.
+    detail = client.get(f"{reports_path}/comparisons/{comparison['id']}", headers=ctx['headers'])
+    assert detail.json() == comparison
+    history = client.get(f'{reports_path}/executions', headers=ctx['headers']).json()
+    assert len(history) == 9
+    assert all(row['report']['total_requests'] > 0 for row in history)
+
+
 def test_non_multiple_duration_records_actual_window(api, target) -> None:
     client, factory = api
     ctx = _bootstrap(client, factory, target)

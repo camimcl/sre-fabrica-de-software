@@ -6,6 +6,7 @@ SQLite engine, injected by monkeypatching get_engine in the engine module.
 """
 
 import asyncio
+import json
 import threading
 import time
 from collections.abc import Iterator
@@ -183,6 +184,11 @@ def test_engine_completes_and_records_windows(db_engine, target) -> None:
     asyncio.run(load_engine.run_execution(execution_id, event))
 
     assert _status(db_engine, execution_id) == ExecutionStatus.COMPLETED
+    with db_engine() as db:
+        recorded = json.loads(db.get(TestExecution, execution_id).target_snapshot)
+        assert recorded["base_url"] == target
+        assert recorded["http_method"] == "GET"
+        assert recorded["window_duration_ms"] == load_engine.WINDOW_DURATION_MS
     windows = _windows(db_engine, execution_id)
     assert len(windows) >= 1
     first = windows[0]

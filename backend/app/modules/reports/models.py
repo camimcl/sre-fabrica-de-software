@@ -3,10 +3,12 @@ from decimal import Decimal
 import uuid
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
     Integer,
+    Index,
     Numeric,
     String,
     Text,
@@ -49,6 +51,10 @@ class ExecutionReport(Base):
 
 class ComparisonReport(Base):
     __tablename__ = "comparison_reports"
+    __table_args__ = (
+        CheckConstraint("repetitions_per_strategy >= 3", name="ck_comparison_repetitions"),
+        Index("ix_comparison_reports_project_generated", "project_id", "generated_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -75,6 +81,7 @@ class ComparisonReport(Base):
 class ComparisonReportExecution(Base):
     __tablename__ = "comparison_report_executions"
     __table_args__ = (
+        CheckConstraint("repetition_number > 0", name="ck_comparison_repetition_number"),
         UniqueConstraint(
             "comparison_report_id",
             "execution_id",

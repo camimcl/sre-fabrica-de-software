@@ -26,6 +26,7 @@ classDiagram
     class TestExecution {
       +UUID id
       +ExecutionStatus status
+      +string target_snapshot
       +start()
       +cancel(reason)
     }

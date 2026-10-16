@@ -109,6 +109,7 @@ CREATE TABLE test_executions (
     started_at TIMESTAMPTZ,
     ended_at TIMESTAMPTZ,
     cancellation_reason TEXT,
+    target_snapshot TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT ck_execution_duration CHECK (duration_seconds > 0),
     CONSTRAINT ck_execution_concurrency CHECK (initial_concurrency > 0 AND max_concurrency >= initial_concurrency),

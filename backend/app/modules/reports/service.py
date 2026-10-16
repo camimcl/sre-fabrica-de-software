@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.types import ControlStrategy, ExecutionStatus
+from app.modules.control.models import ControlDecision
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
 from app.modules.reports.models import (
@@ -116,9 +117,19 @@ def generate_execution_report(db: Session, execution: TestExecution) -> Executio
     return report
 
 
-def _conditions(execution: TestExecution, scenario: TestScenario) -> dict:
+def _conditions(execution: TestExecution) -> dict:
+    try:
+        target = json.loads(execution.target_snapshot or "null")
+    except (TypeError, json.JSONDecodeError):
+        target = None
+    required = {"endpoint_id", "base_url", "http_method", "window_duration_ms"}
+    if not isinstance(target, dict) or not required <= target.keys():
+        raise HTTPException(
+            status_code=409,
+            detail="Execution has no recorded target snapshot; run a new experiment",
+        )
     return {
-        "endpoint_id": str(scenario.endpoint_id),
+        "target": target,
         "duration_seconds": execution.duration_seconds,
         "initial_concurrency": execution.initial_concurrency,
         "max_concurrency": execution.max_concurrency,
@@ -236,7 +247,7 @@ def create_comparison_report(
                 status_code=409,
                 detail="Comparisons require completed executions",
             )
-        conditions = _conditions(execution, scenario)
+        conditions = _conditions(execution)
         if canonical_conditions is None:
             canonical_conditions = conditions
         elif conditions != canonical_conditions:
@@ -269,6 +280,32 @@ def create_comparison_report(
     assert canonical_conditions is not None
     encoded_conditions = json.dumps(canonical_conditions, sort_keys=True)
     results, conclusion = _comparison_results(grouped_reports)
+    ai_executions = grouped_executions[ControlStrategy.AI_HYBRID]
+    ai_ids = [execution.id for execution in ai_executions]
+    decisions = db.execute(
+        select(ControlDecision.strategy, ControlDecision.risk_prediction_id)
+        .join(MetricWindow, MetricWindow.id == ControlDecision.metric_window_id)
+        .where(MetricWindow.execution_id.in_(ai_ids))
+    ).all()
+    ai_windows = sum(_summary_values(report)["window_count"] for report in grouped_reports[ControlStrategy.AI_HYBRID])
+    inferred = sum(strategy == ControlStrategy.AI_HYBRID and prediction is not None for strategy, prediction in decisions)
+    fallback = sum(strategy == ControlStrategy.RULES for strategy, _ in decisions)
+    results["ai_evidence"] = {
+        "model_version_ids": sorted({str(execution.model_version_id) for execution in ai_executions if execution.model_version_id}),
+        "windows": ai_windows,
+        "inference_windows": inferred,
+        "fallback_windows": fallback,
+        "unverified_windows": ai_windows - inferred - fallback,
+    }
+    results["metric_definitions"] = {
+        "latency_p95_ms": "Mean of per-window P95 values per execution, then statistics across repetitions; not a global P95.",
+        "throughput_rps": "Requests divided by observed metric-window duration; excludes time between windows.",
+        "standard_deviation": "Population standard deviation of the selected repetitions.",
+    }
+    if inferred != ai_windows:
+        conclusion += " WARNING: AI_HYBRID includes fallback or unverified windows; differences cannot be attributed exclusively to AI inference."
+    if len(results["ai_evidence"]["model_version_ids"]) != 1:
+        conclusion += " WARNING: a single model version was not verified across AI_HYBRID runs."
     comparison = ComparisonReport(
         project_id=project_id,
         created_by=created_by,
