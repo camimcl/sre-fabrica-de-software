@@ -104,9 +104,9 @@ backend/
   tests/
 frontend/
   src/
-    pages/
-    components/
-    navigation/
+    App.tsx
+    SprintFivePanel.tsx
+    SprintSixReportsPanel.tsx
 database/
   schema.sql
   seeds/
@@ -138,6 +138,12 @@ O módulo de testes de carga (`load_tests`) foi implementado com CRUD de cenári
 O segundo módulo funcional integra `intelligence` e `control` ao motor de carga. A aplicação forma um conjunto de dados próprio com as janelas persistidas, rotula a ocorrência de degradação nas cinco janelas futuras, nominalmente dez segundos e com duração observada variável, compara dois algoritmos locais e armazena a versão candidata com precisão, recall, F1, acurácia e hashes do conjunto e do artefato. Um QA pode aprovar uma versão; as execuções `AI_HYBRID` passam a persistir uma previsão e uma decisão por janela, enquanto a ausência ou falha do modelo ativa o fallback por regras sem interromper o teste.
 
 O painel React agora permite criar cenários, iniciar e interromper execuções, acompanhar métricas, riscos e decisões e administrar versões do modelo. A explicação técnica, as regras atualizadas, os testes e o registro de bugs estão no [Relatório Técnico da Sprint 05](docs/relatorio-sprint-05.md).
+
+## Sprint 06
+
+O terceiro módulo funcional reúne histórico, relatórios por execução e comparação experimental. Uma comparação só é persistida quando contém `FIXED`, `RULES` e `AI_HYBRID`, com as mesmas condições e pelo menos três repetições concluídas de cada estratégia. O resultado apresenta média, desvio-padrão, mínimos, máximos e diferenças percentuais, sem transformar uma amostra pequena em alegação de significância estatística.
+
+O treinamento também passou a calibrar o limiar no conjunto de validação com prioridade para a meta de recall `0,80`; candidatos abaixo da meta não podem ser aprovados. O resultado histórico de recall `0,70370` continua documentado, sem ser reescrito. O [cronograma revisado](docs/cronograma-sprints.md), o [Relatório Técnico da Sprint 06](docs/relatorio-sprint-06.md) e o [índice de evidências](docs/evidences/sprint-06/README.md) registram o método, as limitações e a rastreabilidade.
 
 ## Como executar localmente com Docker
 
@@ -193,6 +199,10 @@ Os volumes nomeados `loadforge_pgdata` e `loadforge_model_artifacts` preservam, 
 | `GET /intelligence/models` | Autenticado | Lista versões, estados e métricas dos modelos locais. |
 | `POST /intelligence/models/train` | QA | Treina e persiste uma nova versão candidata. |
 | `POST /intelligence/models/{id}/approve` | QA | Valida o artefato e aprova uma única versão para inferência. |
+| `GET /projects/{id}/reports/executions` | Autenticado | Lista o histórico integrado com os relatórios já gerados. |
+| `POST` e `GET .../executions/{id}/report` | QA/Autenticado | Gera e consulta o relatório persistido de uma execução terminal. |
+| `POST /projects/{id}/reports/comparisons` | QA proprietário | Compara três estratégias em condições equivalentes e repetidas. |
+| `GET /projects/{id}/reports/comparisons` | Autenticado | Lista e recupera comparações persistidas. |
 
 ### Testes
 
@@ -203,9 +213,9 @@ uv sync --locked --extra dev --no-install-project
 uv run --no-sync pytest -q
 ```
 
-Em 03/10/2026, a suíte apresentou **64 testes aprovados**, sem falhas e sem testes ignorados. Cinco casos requerem PostgreSQL, incluindo a migração de históricos compatíveis e o bloqueio preventivo de históricos fora dos limites. Esses testes exigem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele. Não use um banco de produção.
+Em 15/10/2026, a verificação local da Sprint 06 apresentou **65 testes aprovados e 5 ignorados**, sem falhas. Os cinco casos ignorados requerem PostgreSQL e incluem as migrations sobre históricos. Eles exigem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele. Não use um banco de produção. A evidência da Sprint 05 com PostgreSQL permanece preservada e não é apresentada como se fosse uma nova execução.
 
-O [relatório da Sprint 05](docs/relatorio-sprint-05.md) registra build Docker, fluxo real de IA, persistência após reinício e navegação. As [evidências identificadas](docs/evidences/sprint-05/README.md) incluem as capturas e os resultados, sem credenciais. A interface foi exercitada com serviços reais, incluindo uma resposta de rede deliberadamente atrasada para conferir o isolamento da seleção.
+O [relatório da Sprint 06](docs/relatorio-sprint-06.md) registra o terceiro módulo, a integração, o protocolo comparativo e as limitações da evidência atual. O [relatório da Sprint 05](docs/relatorio-sprint-05.md) continua registrando build Docker, fluxo real de IA, persistência após reinício e navegação.
 
 O teste de navegador `frontend/tests/navigation-race.cjs` requer Playwright, um navegador instalado e um laboratório já populado. Configure `LOADFORGE_E2E_URL`, `LOADFORGE_E2E_EMAIL`, `LOADFORGE_E2E_PASSWORD` e `LOADFORGE_E2E_FIXTURE` no ambiente, nunca no código. O fixture segue a estrutura de `docs/evidences/sprint-05/fluxo-api.json` e seus IDs devem existir no laboratório utilizado; as credenciais não fazem parte do fixture. Execute `node frontend/tests/navigation-race.cjs`. O navegador padrão é Edge; `LOADFORGE_BROWSER` permite outro canal instalado.
 
@@ -217,7 +227,7 @@ Não há deploy, publicação de imagens ou merge automático. Os testes de nave
 
 ### Atualização de bases antigas
 
-A migration `20261001_0003` faz uma pré-verificação transacional dos limites de cenários e execuções. Se encontrar históricos incompatíveis, aborta com a mensagem `Sprint 05 preflight` e as contagens, antes de adicionar colunas ou atualizar registros. A equipe deve examinar esses dados e definir uma estratégia de preservação antes de repetir a migração. Não há exclusão nem redução automática de valores históricos. Bases compatíveis mantêm os registros e recebem o snapshot de ramp-up.
+A migration `20261001_0003` faz uma pré-verificação transacional dos limites de cenários e execuções. Se encontrar históricos incompatíveis, aborta com a mensagem `Sprint 05 preflight` e as contagens, antes de adicionar colunas ou atualizar registros. A equipe deve examinar esses dados e definir uma estratégia de preservação antes de repetir a migração. Não há exclusão nem redução automática de valores históricos. Bases compatíveis mantêm os registros e recebem o snapshot de ramp-up. A migration `20261015_0005` acrescenta as comparações e seus vínculos com as execuções sem alterar os relatórios históricos existentes.
 
 `backend/uv.lock` fixa as dependências diretas e transitivas. A imagem da API instala a exportação `backend/requirements.lock` com verificação obrigatória de hashes, sem resolver versões novas a cada build. A execução local usa o código a partir do diretório `backend`, sem precisar instalar o próprio projeto como pacote editável. Para atualizar dependências intencionalmente, execute `uv lock --upgrade`, regenere com `uv export --frozen --no-emit-project --no-dev --no-header --output-file requirements.lock` e execute novamente os testes antes de registrar os dois arquivos. O lockfile não substitui auditoria de vulnerabilidades nem fixa a imagem-base do sistema operacional.
 
