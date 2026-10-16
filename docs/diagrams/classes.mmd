@@ -56,6 +56,16 @@ classDiagram
       +float average_throughput_rps
       +float final_error_rate
     }
+    class ComparisonReport {
+      +string name
+      +int repetitions_per_strategy
+      +string conditions_fingerprint
+      +string conclusion
+    }
+    class ComparisonReportExecution {
+      +ControlStrategy strategy
+      +int repetition_number
+    }
     class RiskPredictor {
       <<interface>>
       +predict_risk(features) RiskPredictionResult
@@ -90,6 +100,9 @@ classDiagram
     MetricWindow "1" --> "1" ControlDecision : produz
     ModelVersion "1" --> "0..*" RiskPrediction : gera
     TestExecution "1" --> "0..1" ExecutionReport : consolida
+    Project "1" --> "0..*" ComparisonReport : organiza
+    ComparisonReport "1" --> "9..*" ComparisonReportExecution : compara
+    TestExecution "1" --> "0..*" ComparisonReportExecution : participa
     RiskPredictor <|.. SklearnRiskPredictor
     ConcurrencyController <|.. RulesController
     ConcurrencyController <|.. AdaptiveLoadController

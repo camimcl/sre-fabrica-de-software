@@ -6,11 +6,17 @@ from app.modules.intelligence.models import ModelVersion, RiskPrediction
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
-from app.modules.reports.models import ExecutionReport
+from app.modules.reports.models import (
+    ComparisonReport,
+    ComparisonReportExecution,
+    ExecutionReport,
+)
 
 
 __all__ = [
     "ControlDecision",
+    "ComparisonReport",
+    "ComparisonReportExecution",
     "Endpoint",
     "ExecutionReport",
     "MetricWindow",

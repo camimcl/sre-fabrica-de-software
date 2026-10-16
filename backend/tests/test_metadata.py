@@ -16,6 +16,8 @@ EXPECTED_TABLES = {
     "risk_predictions",
     "control_decisions",
     "execution_reports",
+    "comparison_reports",
+    "comparison_report_executions",
 }
 
 
