@@ -1,0 +1,116 @@
+name: LoadForge CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend + PostgreSQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: loadforge_ci
+          POSTGRES_DB: loadforge_ci_test
+          # Public test-only credential for this disposable runner, never production.
+          POSTGRES_PASSWORD: ci-disposable-only
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U loadforge_ci -d loadforge_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://loadforge_ci:ci-disposable-only@127.0.0.1:5432/loadforge_ci_test
+      LOADFORGE_TEST_DATABASE_URL: postgresql+psycopg://loadforge_ci:ci-disposable-only@127.0.0.1:5432/loadforge_ci_test
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: "0.11.20"
+          python-version: "3.11"
+          enable-cache: false
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev --no-install-project
+      - name: Apply PostgreSQL migrations
+        run: uv run --no-sync alembic upgrade head
+      - name: Run all backend tests
+        env:
+          LOADFORGE_MODEL_DIR: ${{ runner.temp }}/loadforge-models
+          LOADFORGE_TEST_ARTIFACT_ROOT: ${{ runner.temp }}/loadforge-test-models
+        run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml=test-results/pytest.xml
+      - name: Reject empty or skipped test suites
+        run: |
+          uv run --no-sync python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = list(ET.parse("test-results/pytest.xml").getroot().iter("testcase"))
+          if not cases or any(case.find("skipped") is not None for case in cases):
+              raise SystemExit("CI requires a nonempty test suite with no skipped tests.")
+          print(f"Verified {len(cases)} test cases without skips.")
+          PY
+      - name: Save test report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: backend-test-results
+          path: backend/test-results/pytest.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type-check and build
+        run: npm run build
+
+  containers:
+    name: Docker builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Build API image
+        run: docker build --tag loadforge-api:ci ./backend
+      - name: Build frontend image
+        run: docker build --tag loadforge-frontend:ci ./frontend

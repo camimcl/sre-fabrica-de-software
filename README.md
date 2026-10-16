@@ -209,6 +209,12 @@ O [relatório da Sprint 05](docs/relatorio-sprint-05.md) registra build Docker, 
 
 O teste de navegador `frontend/tests/navigation-race.cjs` requer Playwright, um navegador instalado e um laboratório já populado. Configure `LOADFORGE_E2E_URL`, `LOADFORGE_E2E_EMAIL`, `LOADFORGE_E2E_PASSWORD` e `LOADFORGE_E2E_FIXTURE` no ambiente, nunca no código. O fixture segue a estrutura de `docs/evidences/sprint-05/fluxo-api.json` e seus IDs devem existir no laboratório utilizado; as credenciais não fazem parte do fixture. Execute `node frontend/tests/navigation-race.cjs`. O navegador padrão é Edge; `LOADFORGE_BROWSER` permite outro canal instalado.
 
+### Integração contínua
+
+O workflow [LoadForge CI](.github/workflows/ci.yml) executa, em PRs para `main` e pushes nessa branch, três verificações: suíte Python com PostgreSQL 16 e migrations, compilação TypeScript/Vite e construção das imagens Docker. O backend exige testes sem falhas nem skips e disponibiliza o relatório XML. O ambiente é descartável e não utiliza o banco ou as credenciais locais da equipe.
+
+Não há deploy, publicação de imagens ou merge automático. Os testes de navegação continuam locais até que exista uma preparação independente de dados de teste. Consulte o [guia de integração contínua](docs/integracao-continua.md) para acompanhar falhas, conhecer os limites e configurar separadamente os checks obrigatórios da `main`.
+
 ### Atualização de bases antigas
 
 A migration `20261001_0003` faz uma pré-verificação transacional dos limites de cenários e execuções. Se encontrar históricos incompatíveis, aborta com a mensagem `Sprint 05 preflight` e as contagens, antes de adicionar colunas ou atualizar registros. A equipe deve examinar esses dados e definir uma estratégia de preservação antes de repetir a migração. Não há exclusão nem redução automática de valores históricos. Bases compatíveis mantêm os registros e recebem o snapshot de ramp-up.
