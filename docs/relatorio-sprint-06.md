@@ -23,7 +23,11 @@ O módulo `reports` entrega o fluxo:
 
 O relatório individual agrega requisições, sucessos, timeouts, duração observada, throughput, p95, taxa de erro, pico de concorrência e conformidade das janelas. A comparação agrupa esses relatórios e registra média, desvio-padrão populacional, mínimo e máximo de throughput, p95, erro e conformidade, além dos deltas de `AI_HYBRID` contra `FIXED` e `RULES`.
 
-As entidades `comparison_reports` e `comparison_report_executions` mantêm a evidência e as nove ou mais execuções utilizadas. A impressão SHA-256 das condições facilita identificar comparações equivalentes. A migration `20261015_0005` e o esquema de referência foram atualizados em conjunto.
+As entidades `comparison_reports` e `comparison_report_executions` mantêm a evidência e as nove ou mais execuções utilizadas. A impressão SHA-256 das condições facilita identificar comparações equivalentes. A migration `20261015_0005` cria essas tabelas e `20261016_0006` acrescenta o snapshot do alvo efetivamente carregado pelo motor (endpoint, URL, método HTTP e duração nominal das janelas). Alterações posteriores no cadastro não reescrevem esse registro. Históricos sem snapshot continuam consultáveis, mas exigem novas execuções para gerar uma comparação verificável; não há preenchimento retroativo inventado.
+
+O campo comparativo `latency_p95_ms` representa estatísticas da **média dos P95 das janelas por execução**, não um percentil global das requisições. O throughput usa o tempo observado nas janelas, excluindo intervalos de persistência entre elas. O campo legado `final_error_rate` contém a taxa agregada de erro, enquanto `final_latency_p95_ms` corresponde à última janela. Esses significados são explicitados na interface e nas definições do resultado.
+
+A comparação também conta janelas com inferência, fallback por regras e ausência de comprovação, além de identificar as versões dos modelos. Fallback, registros incompletos ou modelos diferentes geram ressalvas: os deltas não demonstram contribuição exclusiva da IA. Comparações históricas sem essa auditoria recebem aviso na interface.
 
 ## Integração entre módulos
 
@@ -42,7 +46,7 @@ A aplicação passou a ter navegação principal explícita entre Projetos, Test
 
 Na tela de Relatórios, o usuário pode filtrar o histórico por estratégia, gerar um relatório individual, selecionar execuções concluídas e acompanhar a contagem de repetições. O botão comparativo só é habilitado quando há ao menos três seleções por estratégia e a quantidade está balanceada; o backend repete a validação e também confere as condições. Respostas atrasadas de um projeto anterior são descartadas para impedir mistura de informações após uma troca rápida de contexto.
 
-As mensagens de validação HTTP `422` passaram a apresentar os campos e motivos informados pela API. A interface também mostra a meta de recall, se ela foi atingida e o limiar de decisão da versão aprovada.
+As mensagens de validação HTTP `422` passaram a apresentar os campos e motivos informados pela API. A interface também mostra a meta de recall, se ela foi atingida e o limiar de decisão da versão aprovada. Relatórios exibem deltas, condições completas, identificadores das execuções e auditoria de fallback; deltas com base zero são apresentados como indisponíveis. A seleção limita comparações a 90 execuções e impede ações simultâneas enquanto uma operação está em andamento.
 
 ## Protocolo experimental
 
@@ -63,9 +67,13 @@ O backend garante os itens que podem ser deduzidos dos dados persistidos. Versã
 
 A suíte automatizada usa uma base determinística de três repetições por estratégia para provar a matemática, as rejeições e a persistência do relatório. Esses valores são dados de teste conhecidos e **não são apresentados como ganho real de `AI_HYBRID`**. Sem uma nova sessão de laboratório com um alvo autorizado e condições controladas, seria incorreto inventar uma conclusão de desempenho.
 
-Na verificação de 16/10/2026, já sobre a `main` que incorporou o PR #4 de integração contínua, o backend concluiu **65 testes**, sem falhas, e ignorou cinco testes que exigem `LOADFORGE_TEST_DATABASE_URL`. O frontend concluiu a compilação TypeScript e o build Vite de produção. O teste HTTP do terceiro módulo autenticou um QA, criou uma comparação de nove execuções, recuperou o histórico com seus relatórios e consultou novamente a comparação persistida. A auditoria npm inicialmente encontrou uma vulnerabilidade alta na dependência transitiva `source-map-js`; o lockfile foi atualizado para `1.2.2` e a nova auditoria terminou com zero vulnerabilidades conhecidas.
+Na verificação final de 16/10/2026, sobre a `main` que incorporou o PR #4 de integração contínua, o backend concluiu **77 testes aprovados, zero falhas e zero ignorados**, com PostgreSQL 16 descartável e separado do banco em uso. A suíte inclui nove execuções HTTP reais locais em ordem rotativa, geração da comparação, consulta posterior e aviso de fallback. Um teste adicional de persistência gera os relatórios sobre o esquema migrado no PostgreSQL, fecha a conexão e recupera o mesmo resultado e os nove vínculos em uma nova sessão. As últimas asserções de autenticação, perfil visualizador e validação foram novamente verificadas na suíte de relatórios (10 testes aprovados).
 
-O rebase preservou o workflow, o guia de integração contínua e a documentação da Sprint 06 sem conflitos de conteúdo. Como o novo CI executa `uv sync --locked`, o `uv.lock` também foi atualizado de `0.5.0` para `0.6.0`, acompanhando a versão declarada no `pyproject.toml`; a validação `uv lock --check` e a instalação travada foram aprovadas. O Docker Desktop não estava ativo na verificação local, portanto a migration `20261015_0005` e os cinco casos PostgreSQL permanecem destinados ao serviço descartável do CI quando houver um pull request.
+O frontend concluiu TypeScript e build Vite de produção. A auditoria npm inicialmente encontrou uma vulnerabilidade alta em `source-map-js`; o lockfile foi atualizado para `1.2.2`, e a instalação limpa no build Docker novamente reportou zero vulnerabilidades. A revisão React orientou o controle de requisições, bloqueio de operações concorrentes e detalhes expansíveis acessíveis. Nesta verificação, não houve nova inspeção visual automatizada do navegador; build e testes HTTP não a substituem.
+
+Os builds Docker da API e do frontend foram concluídos com sucesso usando os Dockerfiles do repositório. Os contêineres existentes de desenvolvimento não foram substituídos; o PostgreSQL de verificação foi criado separadamente.
+
+O rebase preservou o workflow e o guia de integração contínua. O `uv.lock` está alinhado à versão `0.6.0` do `pyproject.toml`. Nesta verificação o Docker estava disponível: as migrations até `20261016_0006` e os testes PostgreSQL foram executados, incluindo preservação do histórico e rejeição de conflitos de limites antigos. A suíte local usa Python 3.12; o build da imagem da API usa Python 3.11. Avisos de depreciação de TestClient/httpx e da configuração Alembic permanecem, sem falhas. A branch incorpora a `main` `5fdf365`, confirmada novamente no remoto; nenhum pull request foi criado para disparar CI.
 
 O resultado histórico da Sprint 05 permanece: F1 `0,82609` e recall `0,70370`. Ele demonstra a limitação que motivou a mudança, não o cumprimento retroativo da meta. O próximo treino só será aprovável se o recall final registrado for pelo menos `0,80`.
 
@@ -77,7 +85,7 @@ O resultado histórico da Sprint 05 permanece: F1 `0,82609` e recall `0,70370`. 
 | Integração entre módulos | Atendido | Histórico usa projetos, cenários, execuções e métricas; comparação cobre as três estratégias. |
 | Melhorias na interface | Atendido | Navegação por áreas, seletor de contexto, estados de meta, filtros e resultados comparativos. |
 | Ajustes de navegação | Atendido | Troca de módulos e projetos, descarte de respostas atrasadas e permissões coerentes. |
-| Comparação experimental real | Preparada, aguardando sessão controlada | O produto executa e persiste a comparação; o repositório não inventa medições de um laboratório ainda não executado. |
+| Evidência de ganho da IA | Pendente de campanha representativa | O teste integrado executou tráfego local real, mas sem modelo aprovado, com fallback. Não substitui a campanha com modelo real, alvo representativo e análise experimental. |
 
 ## Como demonstrar
 
@@ -89,4 +97,4 @@ O resultado histórico da Sprint 05 permanece: F1 `0,82609` e recall `0,70370`. 
 
 ## Conclusão
 
-A Sprint 06 adiciona um terceiro módulo funcional e integrado e transforma o plano experimental em regras executáveis. A entrega melhora a meta de recall sem ocultar o resultado anterior e cria uma trilha persistente para comparações repetidas. A limitação restante é operacional e explícita: a equipe ainda precisa executar e registrar a sessão controlada no alvo autorizado para sustentar qualquer afirmação de ganho real.
+A Sprint 06 adiciona um terceiro módulo funcional e integrado e transforma o plano experimental em regras executáveis. A entrega introduz mecanismos para buscar e exigir a meta de recall, sem afirmar que a nova meta já foi demonstrada em dados representativos. A equipe ainda precisa executar e registrar novo treino e campanha controlada com modelo aprovado para sustentar uma conclusão de ganho ou limitação da IA. O teste HTTP local de fallback valida integração, não essa hipótese experimental.
