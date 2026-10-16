@@ -213,7 +213,7 @@ uv sync --locked --extra dev --no-install-project
 uv run --no-sync pytest -q
 ```
 
-Em 15/10/2026, a verificação local da Sprint 06 apresentou **65 testes aprovados e 5 ignorados**, sem falhas. Os cinco casos ignorados requerem PostgreSQL e incluem as migrations sobre históricos. Eles exigem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele. Não use um banco de produção. A evidência da Sprint 05 com PostgreSQL permanece preservada e não é apresentada como se fosse uma nova execução.
+Em 16/10/2026, após integrar a `main` com o workflow de CI, a verificação local da Sprint 06 apresentou **65 testes aprovados e 5 ignorados**, sem falhas. Os cinco casos ignorados requerem PostgreSQL e incluem as migrations sobre históricos. Eles exigem um banco descartável cujo nome termine em `_test`, as migrations aplicadas e `LOADFORGE_TEST_DATABASE_URL` apontando para ele. Não use um banco de produção. A evidência da Sprint 05 com PostgreSQL permanece preservada e não é apresentada como se fosse uma nova execução.
 
 O [relatório da Sprint 06](docs/relatorio-sprint-06.md) registra o terceiro módulo, a integração, o protocolo comparativo e as limitações da evidência atual. O [relatório da Sprint 05](docs/relatorio-sprint-05.md) continua registrando build Docker, fluxo real de IA, persistência após reinício e navegação.
 
