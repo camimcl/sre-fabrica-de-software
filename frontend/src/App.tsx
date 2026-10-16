@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 
 import { api } from './api'
 import SprintFivePanel from './SprintFivePanel'
+import SprintSixReportsPanel from './SprintSixReportsPanel'
 
 type Role = 'QA' | 'VIEWER'
+type View = 'projects' | 'tests' | 'reports' | 'users'
 type User = { id: string; full_name: string; email: string; role: Role }
 type Project = {
   id: string
@@ -56,10 +58,17 @@ export default function App() {
   const [userForm, setUserForm] = useState<UserForm>(blankUser)
   const [editingUser, setEditingUser] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
+  const [activeView, setActiveView] = useState<View>('projects')
 
   const selectedProject = projects.find((project) => project.id === selectedId)
   const canEdit = user?.role === 'QA' && selectedProject?.owner_id === user.id
   const qaCount = users.filter((entry) => entry.role === 'QA').length
+  const viewCopy: Record<View, { eyebrow: string, title: string, description: string }> = {
+    projects: { eyebrow: 'Configuração', title: 'Projetos e endpoints', description: 'Organize os alvos autorizados antes de executar qualquer carga.' },
+    tests: { eyebrow: 'Operação', title: 'Cenários e controle adaptativo', description: 'Execute carga, acompanhe métricas e administre o modelo local.' },
+    reports: { eyebrow: 'Evidências', title: 'Histórico e relatórios', description: 'Meça e compare FIXED, RULES e AI_HYBRID em condições equivalentes.' },
+    users: { eyebrow: 'Administração', title: 'Usuários e acesso', description: 'Gerencie perfis e permissões do ambiente.' },
+  }
 
   const report = useCallback((error: unknown) => {
     setNotice(typeof error === 'string' ? error : error instanceof Error ? error.message : 'Ocorreu um erro inesperado.')
@@ -266,7 +275,13 @@ export default function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">LF</span><div><strong>LoadForge</strong><small>Ambiente local · Sprint 05</small></div></div>
+        <div className="brand"><span className="brand-mark">LF</span><div><strong>LoadForge</strong><small>Ambiente local · Sprint 06</small></div></div>
+        {user && <nav className="main-nav" aria-label="Navegação principal">
+          <button className={activeView === 'projects' ? 'active' : ''} onClick={() => setActiveView('projects')}>Projetos</button>
+          <button className={activeView === 'tests' ? 'active' : ''} onClick={() => setActiveView('tests')}>Execuções</button>
+          <button className={activeView === 'reports' ? 'active' : ''} onClick={() => setActiveView('reports')}>Relatórios</button>
+          <button className={activeView === 'users' ? 'active' : ''} onClick={() => setActiveView('users')}>Usuários</button>
+        </nav>}
         {user && <div className="account"><span>{user.full_name} <em>{user.role === 'QA' ? 'QA' : 'Visualizador'}</em></span><button className="link-button" onClick={logout}>Sair</button></div>}
       </header>
 
@@ -287,8 +302,9 @@ export default function App() {
         </main>
       ) : (
         <main className="workspace">
-          <div className="page-heading"><div><span className="eyebrow">Área de trabalho</span><h1>Projetos e endpoints</h1><p>Dados salvos no PostgreSQL e disponíveis conforme o seu perfil.</p></div><span className="role-pill">{user.role === 'QA' ? 'Acesso QA' : 'Somente leitura'}</span></div>
-          <div className="columns">
+          <div className="page-heading"><div><span className="eyebrow">{viewCopy[activeView].eyebrow}</span><h1>{viewCopy[activeView].title}</h1><p>{viewCopy[activeView].description}</p></div><span className="role-pill">{user.role === 'QA' ? 'Acesso QA' : 'Somente leitura'}</span></div>
+          {(activeView === 'tests' || activeView === 'reports') && <div className="project-context"><div><span>Projeto ativo</span><strong>{selectedProject?.name ?? 'Nenhum projeto'}</strong></div><select aria-label="Projeto ativo" value={selectedId ?? ''} onChange={(event) => setSelectedId(event.target.value)}><option value="">Selecione um projeto</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div>}
+          {activeView === 'projects' && <div className="columns">
             <section className="card projects-card">
               <div className="section-heading"><h2>Projetos</h2><span>{projects.length}</span></div>
               {projects.length === 0 ? <p className="empty">Nenhum projeto cadastrado.</p> : <div className="project-list">{projects.map((project) => <button key={project.id} className={selectedId === project.id ? 'project-item selected' : 'project-item'} onClick={() => { setSelectedId(project.id); setEditingEndpoint(null); setEndpointForm(blankEndpoint) }}><strong>{project.name}</strong><small>{project.description || 'Sem descrição'}</small></button>)}</div>}
@@ -303,9 +319,12 @@ export default function App() {
                 {canEdit && <form className="stack endpoint-form" onSubmit={submitEndpoint}><h3>{editingEndpoint ? 'Editar endpoint' : 'Novo endpoint'}</h3><div className="form-row"><label>Nome<input required maxLength={120} value={endpointForm.name} onChange={(event) => setEndpointForm({ ...endpointForm, name: event.target.value })} /></label><label>Método<select value={endpointForm.http_method} onChange={(event) => setEndpointForm({ ...endpointForm, http_method: event.target.value })}>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].map((method) => <option key={method}>{method}</option>)}</select></label></div><label>URL do alvo<input required type="url" placeholder="https://exemplo.com/api" value={endpointForm.base_url} onChange={(event) => setEndpointForm({ ...endpointForm, base_url: event.target.value })} /></label><label className="checkbox"><input type="checkbox" checked={endpointForm.authorization_confirmed} onChange={(event) => setEndpointForm({ ...endpointForm, authorization_confirmed: event.target.checked })} /> Autorização do alvo confirmada</label><label>Evidência da autorização<textarea required={endpointForm.authorization_confirmed} maxLength={5000} value={endpointForm.authorization_evidence} onChange={(event) => setEndpointForm({ ...endpointForm, authorization_evidence: event.target.value })} /></label><div className="actions"><button className="primary" type="submit">Salvar endpoint</button>{editingEndpoint && <button type="button" onClick={() => { setEditingEndpoint(null); setEndpointForm(blankEndpoint) }}>Cancelar</button>}</div></form>}
               </> : <p className="empty">Selecione ou crie um projeto para visualizar os endpoints.</p>}
             </section>
-          </div>
-          {selectedProject && <SprintFivePanel key={selectedProject.id} token={token} projectId={selectedProject.id} endpoints={endpoints.filter((endpoint) => endpoint.project_id === selectedProject.id)} canEdit={canEdit} isQa={user.role === 'QA'} report={report} />}
-          <section className="card users-card">
+          </div>}
+          {activeView === 'tests' && selectedProject && <SprintFivePanel key={selectedProject.id} token={token} projectId={selectedProject.id} endpoints={endpoints.filter((endpoint) => endpoint.project_id === selectedProject.id)} canEdit={canEdit} isQa={user.role === 'QA'} report={report} />}
+          {activeView === 'tests' && !selectedProject && <p className="empty">Selecione ou crie um projeto antes de configurar cenários.</p>}
+          {activeView === 'reports' && selectedProject && <SprintSixReportsPanel key={selectedProject.id} token={token} projectId={selectedProject.id} canEdit={canEdit} report={report} />}
+          {activeView === 'reports' && !selectedProject && <p className="empty">Selecione um projeto para consultar o histórico e os relatórios.</p>}
+          {activeView === 'users' && <section className="card users-card standalone-card">
             <div className="section-heading">
               <div>
                 <span className="eyebrow">{user.role === 'QA' ? 'Controle de acesso' : 'Dados da conta'}</span>
@@ -349,7 +368,7 @@ export default function App() {
                 </div>
               </form> : <p className="empty profile-help">Use o botão Editar para atualizar seu nome, e-mail ou senha.</p>}
             </div>
-          </section>
+          </section>}
         </main>
       )}
       {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label="Fechar aviso" onClick={() => setNotice('')}>×</button></div>}
