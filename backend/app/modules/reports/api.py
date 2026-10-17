@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
-from app.modules.load_tests.api import _execution, _owned_project, _project, _scenario
+from app.modules.load_tests.access import require_execution, require_scenario
 from app.modules.load_tests.models import TestExecution, TestScenario
+from app.modules.projects.access import require_owned_project, require_project
 from app.modules.reports.models import (
     ComparisonReport,
     ComparisonReportExecution,
@@ -64,7 +65,7 @@ def execution_history(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[ExecutionHistoryItem]:
-    _project(db, project_id)
+    require_project(db, project_id)
     rows = db.execute(
         select(TestExecution, TestScenario, ExecutionReport)
         .join(TestScenario, TestScenario.id == TestExecution.scenario_id)
@@ -99,9 +100,9 @@ def create_execution_report_endpoint(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> ExecutionReport:
-    _owned_project(db, project_id, user)
-    _scenario(db, project_id, scenario_id)
-    execution = _execution(db, scenario_id, execution_id)
+    require_owned_project(db, project_id, user)
+    require_scenario(db, project_id, scenario_id)
+    execution = require_execution(db, scenario_id, execution_id)
     report = generate_execution_report(db, execution)
     db.commit()
     db.refresh(report)
@@ -119,9 +120,9 @@ def get_execution_report_endpoint(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ExecutionReport:
-    _project(db, project_id)
-    _scenario(db, project_id, scenario_id)
-    _execution(db, scenario_id, execution_id)
+    require_project(db, project_id)
+    require_scenario(db, project_id, scenario_id)
+    require_execution(db, scenario_id, execution_id)
     report = db.scalar(
         select(ExecutionReport).where(ExecutionReport.execution_id == execution_id)
     )
@@ -141,7 +142,7 @@ def create_comparison(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> ComparisonReportResponse:
-    _owned_project(db, project_id, user)
+    require_owned_project(db, project_id, user)
     comparison = create_comparison_report(
         db,
         project_id=project_id,
@@ -161,7 +162,7 @@ def list_comparisons(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[ComparisonReportResponse]:
-    _project(db, project_id)
+    require_project(db, project_id)
     comparisons = list(
         db.scalars(
             select(ComparisonReport)
@@ -182,7 +183,7 @@ def get_comparison(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ComparisonReportResponse:
-    _project(db, project_id)
+    require_project(db, project_id)
     comparison = db.scalar(
         select(ComparisonReport).where(
             ComparisonReport.id == comparison_id,

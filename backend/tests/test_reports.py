@@ -21,8 +21,10 @@ from app.db.session import get_db
 from app.db.types import ControlStrategy, ExecutionStatus, UserRole
 from app.main import app
 from app.modules.auth.models import User
+from app.modules.load_tests.access import require_execution, require_scenario
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
+from app.modules.projects.access import require_owned_project, require_project
 from app.modules.projects.models import Endpoint, Project
 from app.modules.reports import service as report_service
 from app.modules.reports.models import ComparisonReport, ComparisonReportExecution, ExecutionReport
@@ -172,6 +174,41 @@ def _seed_experiment(db: Session) -> tuple[Project, User, list[TestExecution]]:
             executions.append(execution)
     db.commit()
     return project, user, executions
+
+
+def test_shared_access_contract_returns_scoped_resources(db: Session, monkeypatch) -> None:
+    project, user, executions = _seed_experiment(db)
+    execution = executions[0]
+
+    def reject_commit():
+        pytest.fail("Access lookups must not commit")
+
+    monkeypatch.setattr(db, "commit", reject_commit)
+    assert require_project(db, project.id) is project
+    assert require_owned_project(db, project.id, user) is project
+    assert require_scenario(db, project.id, execution.scenario_id).id == execution.scenario_id
+    assert require_execution(db, execution.scenario_id, execution.id) is execution
+    assert not db.new and not db.dirty and not db.deleted
+
+
+def test_shared_access_contract_preserves_not_found_and_owner_errors(db: Session) -> None:
+    project, user, executions = _seed_experiment(db)
+    execution = executions[0]
+    other_project, other_user, other_executions = _seed_experiment(db)
+    cases = [
+        (require_project, (db, uuid4()), 404, "Project not found"),
+        (require_owned_project, (db, uuid4(), user), 404, "Project not found"),
+        (require_owned_project, (db, project.id, other_user), 403, "Project owner required"),
+        (require_scenario, (db, project.id, uuid4()), 404, "Scenario not found"),
+        (require_scenario, (db, other_project.id, execution.scenario_id), 404, "Scenario not found"),
+        (require_execution, (db, execution.scenario_id, uuid4()), 404, "Execution not found"),
+        (require_execution, (db, other_executions[0].scenario_id, execution.id), 404, "Execution not found"),
+    ]
+    for lookup, args, status, detail in cases:
+        with pytest.raises(HTTPException) as error:
+            lookup(*args)
+        assert error.value.status_code == status
+        assert error.value.detail == detail
 
 
 def test_execution_report_aggregates_persisted_windows(db: Session) -> None:
