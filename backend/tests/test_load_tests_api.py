@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+import json
 from uuid import UUID
 
 import pytest
@@ -14,7 +15,9 @@ from app.db.session import get_db
 from app.db.types import UserRole
 from app.main import app
 from app.modules.auth.models import User
-from app.modules.load_tests.models import TestExecution
+from app.modules.load_tests.models import TestExecution, TestScenario
+from app.modules.projects.models import Endpoint
+from app.modules.reports.service import _conditions
 
 
 @pytest.fixture
@@ -349,6 +352,17 @@ def test_execution_creation_snapshots_and_requires_ack(
     assert fetched["max_concurrency"] == 50
     assert fetched["ramp_up_per_window"] == 2
     assert fetched["initiated_by"] == str(qa.id)
+    # The snapshot is committed with PENDING, without /start or a plan read.
+    with factory() as db:
+        pending = db.get(TestExecution, UUID(execution_id))
+        captured = json.loads(pending.target_snapshot)
+        assert captured == {
+            "endpoint_id": str(db.get(TestScenario, pending.scenario_id).endpoint_id),
+            "base_url": "https://example.com/api",
+            "http_method": "GET",
+            "window_duration_ms": 2000,
+        }
+        assert _conditions(pending)["target"] == captured
 
     # The execution keeps its own immutable ramp-up snapshot even if the
     # scenario is edited before the engine starts.
@@ -366,6 +380,8 @@ def test_execution_creation_snapshots_and_requires_ack(
         headers=headers,
     ).json()
     assert fetched_again["ramp_up_per_window"] == 2
+    with factory() as db:
+        assert json.loads(db.get(TestExecution, UUID(execution_id)).target_snapshot) == captured
 
     # acknowledgement is required at creation
     endpoint_id = _endpoint(client, project_id, headers)
@@ -380,6 +396,55 @@ def test_execution_creation_snapshots_and_requires_ack(
         headers=headers,
     )
     assert rejected.status_code == 422
+
+
+def test_execution_keeps_original_target_after_scenario_edit(api) -> None:
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email, "strong-password-123")
+    project_id, scenario_id, execution_id = _make_execution(client, headers)
+    base = f"/projects/{project_id}/scenarios/{scenario_id}/executions/{execution_id}"
+    with factory() as db:
+        before = db.get(TestExecution, UUID(execution_id)).target_snapshot
+    replacement = _endpoint(client, project_id, headers)
+    changed = client.put(
+        f"/projects/{project_id}/scenarios/{scenario_id}",
+        json=_scenario_payload(replacement), headers=headers,
+    )
+    assert changed.status_code == 200
+    assert client.post(f"{base}/start", headers=headers).status_code == 200
+    with factory() as db:
+        execution = db.get(TestExecution, UUID(execution_id))
+        assert execution.target_snapshot == before
+        assert json.loads(before)["endpoint_id"] != replacement
+
+
+@pytest.mark.parametrize("change", ["url", "method", "authorization", "legacy"])
+def test_start_revalidates_recorded_target_without_rewriting_snapshot(api, change) -> None:
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email, "strong-password-123")
+    project_id, scenario_id, execution_id = _make_execution(client, headers)
+    with factory() as db:
+        execution = db.get(TestExecution, UUID(execution_id))
+        target = json.loads(execution.target_snapshot)
+        endpoint = db.get(Endpoint, UUID(target["endpoint_id"]))
+        if change == "url":
+            endpoint.base_url = "https://example.com/changed"
+        elif change == "method":
+            endpoint.http_method = "POST"
+        elif change == "authorization":
+            endpoint.authorization_confirmed = False
+        else:
+            execution.target_snapshot = None
+        expected = execution.target_snapshot
+        db.commit()
+    base = f"/projects/{project_id}/scenarios/{scenario_id}/executions/{execution_id}"
+    response = client.post(f"{base}/start", headers=headers)
+    assert response.status_code == 409, response.text
+    assert client.get(base, headers=headers).json()["status"] == "PENDING"
+    with factory() as db:
+        assert db.get(TestExecution, UUID(execution_id)).target_snapshot == expected
 
 
 def test_execution_lifecycle_happy_path(

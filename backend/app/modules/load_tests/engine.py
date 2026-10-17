@@ -6,7 +6,6 @@ writes use the existing synchronous Session executed off the event loop via
 """
 
 import asyncio
-import json
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -32,11 +31,8 @@ from app.modules.intelligence.dataset import features_from_window
 from app.modules.intelligence.models import ModelVersion, RiskPrediction
 from app.modules.intelligence.predictor import SklearnRiskPredictor
 from app.modules.load_tests.models import TestExecution
+from app.modules.load_tests.target import WINDOW_DURATION_MS, resolve_execution_target
 from app.modules.metrics.models import MetricWindow
-from app.modules.projects.models import Endpoint
-
-
-WINDOW_DURATION_MS = 2000
 
 
 @dataclass(slots=True)
@@ -170,24 +166,12 @@ registry = EngineRegistry()
 
 
 def _load_plan(execution_id: UUID) -> dict | None:
-    from app.modules.load_tests.models import TestScenario
-
     with Session(get_engine()) as db:
         execution = db.get(TestExecution, execution_id)
         if execution is None:
             return None
-        scenario = db.get(TestScenario, execution.scenario_id)
-        endpoint = (
-            db.get(Endpoint, scenario.endpoint_id) if scenario is not None else None
-        )
-        if endpoint is not None:
-            execution.target_snapshot = json.dumps({
-                "endpoint_id": str(endpoint.id),
-                "base_url": endpoint.base_url,
-                "http_method": endpoint.http_method,
-                "window_duration_ms": WINDOW_DURATION_MS,
-            }, sort_keys=True)
-        plan = {
+        target = resolve_execution_target(db, execution)
+        return {
             "duration_seconds": execution.duration_seconds,
             "strategy": execution.strategy,
             "initial_concurrency": execution.initial_concurrency,
@@ -196,14 +180,11 @@ def _load_plan(execution_id: UUID) -> dict | None:
             "timeout_ms": execution.timeout_ms,
             "p95_limit_ms": execution.p95_limit_ms,
             "error_rate_limit": float(execution.error_rate_limit),
-            "base_url": endpoint.base_url if endpoint else None,
-            "http_method": endpoint.http_method if endpoint else "GET",
-            "authorization_confirmed": (
-                endpoint.authorization_confirmed if endpoint else False
-            ),
+            "base_url": target["base_url"],
+            "http_method": target["http_method"],
+            "window_duration_ms": target["window_duration_ms"],
+            "authorization_confirmed": True,
         }
-        db.commit()
-        return plan
 
 
 def _persist_window(values: dict) -> UUID:
@@ -398,7 +379,7 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
                     cancelled = True
                     break
                 # Last window uses only the remaining configured time.
-                window_ms = min(WINDOW_DURATION_MS, total_ms - elapsed_ms)
+                window_ms = min(plan["window_duration_ms"], total_ms - elapsed_ms)
                 concurrency = (
                     _concurrency_for_window(plan, window_index)
                     if plan["strategy"] == ControlStrategy.FIXED

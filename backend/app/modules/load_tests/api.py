@@ -14,6 +14,7 @@ from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
 from app.modules.load_tests import engine as load_engine
 from app.modules.load_tests.models import TestExecution, TestScenario
+from app.modules.load_tests.target import capture_target, resolve_execution_target
 from app.modules.load_tests.schemas import (
     ExecutionCancelRequest,
     ExecutionCreateRequest,
@@ -276,11 +277,13 @@ def create_execution(
     _owned_project(db, project_id, user)
     scenario = _scenario(db, project_id, scenario_id)
     snapshot = {field: getattr(scenario, field) for field in _SNAPSHOT_FIELDS}
+    endpoint = _authorized_endpoint(db, project_id, scenario.endpoint_id)
     execution = TestExecution(
         scenario_id=scenario.id,
         initiated_by=user.id,
         status=ExecutionStatus.PENDING,
         authorization_acknowledged=request.authorization_acknowledged,
+        target_snapshot=capture_target(endpoint),
         **snapshot,
     )
     db.add(execution)
@@ -359,8 +362,10 @@ async def start_execution(
     # Revalidate the target authorization now: it may have been revoked after
     # the scenario/execution was created. Fail fast and clearly here instead of
     # letting the engine move the execution to FAILED asynchronously.
-    scenario = _scenario(db, project_id, scenario_id)
-    _authorized_endpoint(db, project_id, scenario.endpoint_id)
+    try:
+        resolve_execution_target(db, execution)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     _ensure_transition(execution.status, ExecutionStatus.RUNNING)
     execution.status = ExecutionStatus.RUNNING
     execution.started_at = _now()
