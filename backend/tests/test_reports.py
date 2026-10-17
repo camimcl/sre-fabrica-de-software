@@ -228,6 +228,13 @@ def test_comparison_persists_strategy_statistics_and_deltas(db: Session) -> None
     assert results["AI_HYBRID"]["runs"] == 3
     assert results["ai_evidence"]["unverified_windows"] == 9
     assert results["ai_evidence"]["inference_windows"] == 0
+    assert [warning["code"] for warning in results["warnings"]] == [
+        "AI_INFERENCE_UNVERIFIED", "MODEL_VERSION_UNVERIFIED",
+    ]
+    assert all(
+        f" WARNING: {warning['message']}" in comparison.conclusion
+        for warning in results["warnings"]
+    )
     assert "cannot be attributed exclusively" in comparison.conclusion
     assert results["AI_HYBRID"]["throughput_rps"]["mean"] > results["FIXED"]["throughput_rps"]["mean"]
     assert results["AI_HYBRID"]["latency_p95_ms"]["mean"] < results["RULES"]["latency_p95_ms"]["mean"]
@@ -272,6 +279,9 @@ def test_report_api_exposes_integrated_history_and_comparison(
     comparison = created.json()
     assert comparison["repetitions_per_strategy"] == 3
     assert len(comparison["execution_ids"]) == 9
+    assert [warning["code"] for warning in comparison["results"]["warnings"]] == [
+        "AI_INFERENCE_UNVERIFIED", "MODEL_VERSION_UNVERIFIED",
+    ]
 
     history = client.get(
         f"/projects/{project_id}/reports/executions", headers=headers
@@ -286,6 +296,7 @@ def test_report_api_exposes_integrated_history_and_comparison(
     )
     assert detail.status_code == 200, detail.text
     assert detail.json()["conditions_fingerprint"] == comparison["conditions_fingerprint"]
+    assert detail.json()["results"]["warnings"] == comparison["results"]["warnings"]
     path = f"/projects/{project_id}/reports/comparisons"
     payload = {"name": "Another", "execution_ids": execution_ids}
     assert client.post(path, json=payload).status_code == 401
@@ -420,6 +431,67 @@ def test_comparison_discloses_rules_fallback(db: Session) -> None:
     assert evidence["fallback_windows"] == 9
     assert evidence["unverified_windows"] == 0
     assert "cannot be attributed exclusively" in comparison.conclusion
+    assert json.loads(comparison.results_json)["warnings"][0]["code"] == "AI_INFERENCE_UNVERIFIED"
+
+
+@pytest.mark.parametrize(
+    "model_count,with_inference,expected_codes",
+    [
+        (1, True, []),
+        (2, True, ["MODEL_VERSION_UNVERIFIED"]),
+        (1, False, ["AI_INFERENCE_UNVERIFIED"]),
+    ],
+)
+def test_comparison_structured_warnings_match_evidence(
+    db: Session, model_count: int, with_inference: bool, expected_codes: list[str],
+) -> None:
+    from app.db.types import ControlAction, ModelStatus
+    from app.modules.control.models import ControlDecision
+    from app.modules.intelligence.models import ModelVersion, RiskPrediction
+
+    project, user, executions = _seed_experiment(db)
+    versions = [
+        ModelVersion(
+            version=f"test-model-{index}", algorithm="test", artifact_path="unused.joblib",
+            status=ModelStatus.RETIRED, training_sample_count=10,
+            training_dataset_hash="a" * 64, artifact_sha256="b" * 64,
+        )
+        for index in range(model_count)
+    ]
+    db.add_all(versions)
+    db.flush()
+    ai_executions = [
+        execution for execution in executions
+        if execution.strategy == ControlStrategy.AI_HYBRID
+    ]
+    for index, execution in enumerate(ai_executions):
+        execution.model_version_id = versions[index % model_count].id
+        if not with_inference:
+            continue
+        for window in db.scalars(select(MetricWindow).where(
+            MetricWindow.execution_id == execution.id
+        )):
+            prediction = RiskPrediction(
+                metric_window_id=window.id, model_version_id=execution.model_version_id,
+                risk_probability=Decimal("0.1"), predicted_degradation=False,
+                inference_latency_ms=1,
+            )
+            db.add(prediction)
+            db.flush()
+            db.add(ControlDecision(
+                metric_window_id=window.id, risk_prediction_id=prediction.id,
+                strategy=ControlStrategy.AI_HYBRID, action=ControlAction.HOLD,
+                previous_concurrency=2, next_concurrency=2, reason="Test inference",
+            ))
+    db.commit()
+    comparison = create_comparison_report(
+        db, project_id=project.id, created_by=user.id, name="Structured warnings",
+        execution_ids=[execution.id for execution in executions],
+    )
+    warnings = json.loads(comparison.results_json)["warnings"]
+    assert [warning["code"] for warning in warnings] == expected_codes
+    assert comparison.conclusion.count(" WARNING: ") == len(warnings)
+    assert all(f" WARNING: {warning['message']}" in comparison.conclusion for warning in warnings)
 
 
 @pytest.mark.integration

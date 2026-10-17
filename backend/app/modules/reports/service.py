@@ -302,10 +302,20 @@ def create_comparison_report(
         "throughput_rps": "Requests divided by observed metric-window duration; excludes time between windows.",
         "standard_deviation": "Population standard deviation of the selected repetitions.",
     }
+    warnings: list[dict[str, str]] = []
     if inferred != ai_windows:
-        conclusion += " WARNING: AI_HYBRID includes fallback or unverified windows; differences cannot be attributed exclusively to AI inference."
+        warnings.append({
+            "code": "AI_INFERENCE_UNVERIFIED",
+            "message": "AI_HYBRID includes fallback or unverified windows; differences cannot be attributed exclusively to AI inference.",
+        })
     if len(results["ai_evidence"]["model_version_ids"]) != 1:
-        conclusion += " WARNING: a single model version was not verified across AI_HYBRID runs."
+        warnings.append({
+            "code": "MODEL_VERSION_UNVERIFIED",
+            "message": "a single model version was not verified across AI_HYBRID runs.",
+        })
+    results["warnings"] = warnings
+    # Keep the existing human-readable conclusion compatible with older clients.
+    conclusion += "".join(f" WARNING: {warning['message']}" for warning in warnings)
     comparison = ComparisonReport(
         project_id=project_id,
         created_by=created_by,
