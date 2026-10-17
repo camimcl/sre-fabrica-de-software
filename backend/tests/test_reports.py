@@ -8,13 +8,14 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, delete, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.security import hash_password
 from app.db import models  # noqa: F401
+from app.db import session as db_session
 from app.db.base import Base
 from app.db.session import get_db
 from app.db.types import ControlStrategy, ExecutionStatus, UserRole
@@ -23,6 +24,7 @@ from app.modules.auth.models import User
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
+from app.modules.reports import service as report_service
 from app.modules.reports.models import ComparisonReport, ComparisonReportExecution, ExecutionReport
 from app.modules.reports.service import (
     create_comparison_report,
@@ -296,6 +298,72 @@ def test_report_api_exposes_integrated_history_and_comparison(
         db.commit()
     assert client.post(path, json=payload, headers=headers).status_code == 403
     assert client.get(path, headers=headers).status_code == 200
+
+
+@pytest.mark.parametrize("preexisting_report", [False, True])
+def test_aborted_comparison_does_not_persist_partial_execution_reports(
+    api: tuple[TestClient, sessionmaker],
+    monkeypatch: pytest.MonkeyPatch,
+    preexisting_report: bool,
+) -> None:
+    client, factory = api
+    # Exercise the production dependency's transaction cleanup, not a test rollback.
+    app.dependency_overrides.pop(get_db)
+    monkeypatch.setattr(db_session, "get_engine", lambda: factory.kw["bind"])
+    with factory() as db:
+        project, user, executions = _seed_experiment(db)
+        user.password_hash = hash_password("strong-password-123")
+        if preexisting_report:
+            existing = generate_execution_report(db, executions[0])
+            # Recalculation changes this stale value; that update must roll back too.
+            existing.total_requests = 1
+        missing_windows_id = next(
+            execution.id for execution in executions
+            if execution.strategy == ControlStrategy.RULES
+        )
+        db.execute(delete(MetricWindow).where(
+            MetricWindow.execution_id == missing_windows_id
+        ))
+        db.commit()
+        project_id, email = project.id, user.email
+        execution_ids = [str(execution.id) for execution in executions]
+        baseline_reports = list(db.execute(select(ExecutionReport.__table__)).mappings())
+        baseline_window_ids = set(db.scalars(select(MetricWindow.id)))
+
+    flushed_execution_ids = set()
+
+    def observe_generation(db: Session, execution: TestExecution) -> ExecutionReport:
+        if execution.id == missing_windows_id:
+            # FIXED is processed before RULES, so failure really occurs mid-loop.
+            assert len(flushed_execution_ids) >= 3
+            visible_ids = set(db.scalars(select(ExecutionReport.execution_id)))
+            assert flushed_execution_ids <= visible_ids
+            assert len(visible_ids) > len(baseline_reports)
+        report = generate_execution_report(db, execution)
+        flushed_execution_ids.add(execution.id)
+        return report
+
+    monkeypatch.setattr(report_service, "generate_execution_report", observe_generation)
+    login = client.post(
+        "/auth/login", json={"email": email, "password": "strong-password-123"},
+    )
+    assert login.status_code == 200, login.text
+    response = client.post(
+        f"/projects/{project_id}/reports/comparisons",
+        json={"name": "Aborted comparison", "execution_ids": execution_ids},
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "Execution has no metric windows to report"
+    assert len(flushed_execution_ids) >= 3
+
+    # The request has ended; inspect durable state through a separate session.
+    with factory() as reopened:
+        assert list(reopened.execute(select(ExecutionReport.__table__)).mappings()) == baseline_reports
+        assert list(reopened.scalars(select(ComparisonReport.id))) == []
+        assert list(reopened.scalars(select(ComparisonReportExecution.id))) == []
+        assert set(reopened.scalars(select(MetricWindow.id))) == baseline_window_ids
+        assert {str(value) for value in reopened.scalars(select(TestExecution.id))} == set(execution_ids)
 
 
 def test_comparison_uses_recorded_target_not_mutable_endpoint(db: Session) -> None:
