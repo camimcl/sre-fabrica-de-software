@@ -6,7 +6,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import joblib
+import numpy as np
 from fastapi.testclient import TestClient
+from sklearn.pipeline import Pipeline
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -17,14 +20,21 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.db.types import ControlStrategy, ExecutionStatus, ModelStatus, UserRole
 from app.modules.auth.models import User
-from app.modules.intelligence.dataset import build_training_samples
+from app.modules.intelligence import training
+from app.modules.intelligence.dataset import build_training_samples, feature_vector
 from app.modules.intelligence.models import ModelVersion
 from app.modules.intelligence.predictor import (
     ArtifactValidationError,
     SklearnRiskPredictor,
 )
-from app.modules.intelligence.training import approve_candidate, train_candidate
-from app.modules.intelligence.training import chronological_partitions, TrainingDataError
+from app.modules.intelligence.training import (
+    RECALL_TARGET,
+    TrainingDataError,
+    approve_candidate,
+    chronological_partitions,
+    select_decision_threshold,
+    train_candidate,
+)
 from app.modules.load_tests.models import TestExecution, TestScenario
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
@@ -171,6 +181,81 @@ def test_training_rejects_insufficient_data(db: Session):
         train_candidate(db)
 
 
+def test_threshold_selection_prioritizes_declared_recall_target() -> None:
+    score = select_decision_threshold(
+        [0, 0, 1, 1, 1, 1, 1],
+        [0.10, 0.30, 0.25, 0.35, 0.45, 0.55, 0.90],
+    )
+    assert score["recall"] >= RECALL_TARGET
+    assert score["recall_target_met"] is True
+    assert 0 < score["threshold"] < 1
+
+
+@pytest.mark.parametrize("validation_meets_target", [True, False], ids=["target-met", "fallback"])
+def test_threshold_selection_never_uses_test_partition(
+    db: Session, monkeypatch: pytest.MonkeyPatch, validation_meets_target: bool,
+) -> None:
+    _seed_windows(db)
+    _, validation, test = chronological_partitions(build_training_samples(db))
+    x_validation = [feature_vector(sample.features) for sample in validation]
+    y_validation = [int(sample.degraded_within_horizon) for sample in validation]
+    x_test = [feature_vector(sample.features) for sample in test]
+    y_test = [int(sample.degraded_within_horizon) for sample in test]
+    assert x_validation != x_test and y_validation != y_test
+
+    # Control predictions, not selection: exercise the real threshold search,
+    # including its fallback when every validation threshold misses the target.
+    validation_probabilities = [
+        (0.65 if label else 0.10) if validation_meets_target else 0.05
+        for label in y_validation
+    ]
+    if not validation_meets_target:
+        validation_probabilities[y_validation.index(1)] = 0.35
+    test_probabilities = [0.90 if label else 0.10 for label in y_test]
+    assert validation_probabilities != test_probabilities
+    selections = []
+    prediction_partitions = []
+
+    def controlled_predict_proba(self, features):
+        if features == x_validation:
+            assert "test" not in prediction_partitions, "Validation tuning resumed after test evaluation"
+            prediction_partitions.append("validation")
+            probabilities = validation_probabilities
+        else:
+            assert features == x_test, "Unexpected partition used for evaluation"
+            assert len(selections) == 2, "Test accessed before both candidates were selected on validation"
+            prediction_partitions.append("test")
+            probabilities = test_probabilities
+        return np.array([[1 - value, value] for value in probabilities])
+
+    def validation_only_selector(labels, probabilities):
+        assert labels == y_validation, "Threshold selection received non-validation labels"
+        assert probabilities == validation_probabilities, "Threshold selection received non-validation probabilities"
+        assert "test" not in prediction_partitions, "Threshold selection ran after test access"
+        score = select_decision_threshold(labels, probabilities)
+        assert score["recall_target_met"] is validation_meets_target
+        selections.append(score)
+        return score
+
+    monkeypatch.setattr(Pipeline, "predict_proba", controlled_predict_proba)
+    monkeypatch.setattr(training.RandomForestClassifier, "predict_proba", controlled_predict_proba)
+    monkeypatch.setattr(training, "select_decision_threshold", validation_only_selector)
+    model = train_candidate(db)
+    notes = json.loads(model.notes)
+    expected_threshold = 0.65 if validation_meets_target else 0.35
+    assert len(selections) == 2
+    assert prediction_partitions == ["validation", "validation", "test"]
+    assert all(score["threshold"] == expected_threshold for score in selections)
+    assert all(
+        score["recall_target_met"] is validation_meets_target
+        for score in notes["evaluated"].values()
+    )
+    assert notes["decision_threshold"] == expected_threshold
+    assert notes["test_metrics"]["threshold"] == expected_threshold
+    artifact = joblib.load(Path(os.environ["LOADFORGE_MODEL_DIR"]) / model.artifact_path)
+    assert artifact["decision_threshold"] == expected_threshold
+
+
 def test_dataset_excludes_running_executions(db: Session):
     execution = _seed_windows(db)
     execution.status = ExecutionStatus.RUNNING
@@ -186,6 +271,8 @@ def test_train_version_approve_and_predict(db: Session) -> None:
     assert model.training_sample_count == 116
     assert model.algorithm in {"logistic-regression", "random-forest"}
     assert model.f1_score is not None
+    assert model.recall_score is not None
+    assert float(model.recall_score) >= RECALL_TARGET
     assert len(model.training_dataset_hash) == 64
     assert len(model.artifact_sha256) == 64
 
@@ -196,6 +283,15 @@ def test_train_version_approve_and_predict(db: Session) -> None:
     result = predictor.predict_risk(sample.features)
     assert 0 <= result.probability <= 1
     assert result.model_version == model.version
+
+
+def test_approval_rejects_candidate_below_recall_target(db: Session) -> None:
+    _seed_windows(db)
+    model = train_candidate(db)
+    model.recall_score = Decimal("0.79999")
+    db.commit()
+    with pytest.raises(RuntimeError, match="recall must be at least 0.80"):
+        approve_candidate(db, model)
 
 
 def test_approval_retires_previous_model(db: Session) -> None:

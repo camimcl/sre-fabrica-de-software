@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
+from app.modules.projects.access import require_owned_project, require_project
 from app.modules.projects.models import Endpoint, Project
 from app.modules.projects.schemas import (
     EndpointResponse,
@@ -18,20 +19,6 @@ from app.modules.projects.schemas import (
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
-
-
-def _project(db: Session, project_id: UUID) -> Project:
-    project = db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
-
-
-def _owned_project(db: Session, project_id: UUID, user: User) -> Project:
-    project = _project(db, project_id)
-    if project.owner_id != user.id:
-        raise HTTPException(status_code=403, detail="Project owner required")
-    return project
 
 
 def _endpoint(db: Session, project_id: UUID, endpoint_id: UUID) -> Endpoint:
@@ -79,7 +66,7 @@ def get_project(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> Project:
-    return _project(db, project_id)
+    return require_project(db, project_id)
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
@@ -89,7 +76,7 @@ def update_project(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> Project:
-    project = _owned_project(db, project_id, user)
+    project = require_owned_project(db, project_id, user)
     for key, value in request.model_dump().items():
         setattr(project, key, value)
     _commit(db, "A project with this name already exists for this owner")
@@ -103,7 +90,7 @@ def delete_project(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> None:
-    project = _owned_project(db, project_id, user)
+    project = require_owned_project(db, project_id, user)
     db.delete(project)
     _commit(db, "Remove dependent endpoints and scenarios before deleting the project")
 
@@ -114,7 +101,7 @@ def list_endpoints(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[Endpoint]:
-    _project(db, project_id)
+    require_project(db, project_id)
     return list(
         db.scalars(
             select(Endpoint)
@@ -131,7 +118,7 @@ def create_endpoint(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> Endpoint:
-    _owned_project(db, project_id, user)
+    require_owned_project(db, project_id, user)
     values = request.model_dump()
     values["base_url"] = str(request.base_url)
     endpoint = Endpoint(project_id=project_id, **values)
@@ -148,7 +135,7 @@ def get_endpoint(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> Endpoint:
-    _project(db, project_id)
+    require_project(db, project_id)
     return _endpoint(db, project_id, endpoint_id)
 
 
@@ -160,7 +147,7 @@ def update_endpoint(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> Endpoint:
-    _owned_project(db, project_id, user)
+    require_owned_project(db, project_id, user)
     endpoint = _endpoint(db, project_id, endpoint_id)
     values = request.model_dump()
     values["base_url"] = str(request.base_url)
@@ -178,6 +165,6 @@ def delete_endpoint(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> None:
-    _owned_project(db, project_id, user)
+    require_owned_project(db, project_id, user)
     db.delete(_endpoint(db, project_id, endpoint_id))
     _commit(db, "Remove dependent scenarios before deleting the endpoint")

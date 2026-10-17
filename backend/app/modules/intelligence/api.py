@@ -21,8 +21,9 @@ from app.modules.intelligence.training import (
     approve_candidate,
     train_candidate,
 )
-from app.modules.load_tests.api import _execution, _project, _scenario
+from app.modules.load_tests.access import require_execution, require_scenario
 from app.modules.metrics.models import MetricWindow
+from app.modules.projects.access import require_project
 
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
@@ -76,9 +77,9 @@ def _execution_windows(
     scenario_id: UUID,
     execution_id: UUID,
 ) -> list[UUID]:
-    _project(db, project_id)
-    _scenario(db, project_id, scenario_id)
-    _execution(db, scenario_id, execution_id)
+    require_project(db, project_id)
+    require_scenario(db, project_id, scenario_id)
+    require_execution(db, scenario_id, execution_id)
     return list(
         db.scalars(
             select(MetricWindow.id).where(MetricWindow.execution_id == execution_id)

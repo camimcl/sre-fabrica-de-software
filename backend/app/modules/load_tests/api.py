@@ -13,7 +13,9 @@ from app.db.types import ExecutionStatus
 from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
 from app.modules.load_tests import engine as load_engine
+from app.modules.load_tests.access import require_execution, require_scenario
 from app.modules.load_tests.models import TestExecution, TestScenario
+from app.modules.load_tests.target import capture_target, resolve_execution_target
 from app.modules.load_tests.schemas import (
     ExecutionCancelRequest,
     ExecutionCreateRequest,
@@ -23,7 +25,8 @@ from app.modules.load_tests.schemas import (
     ScenarioWrite,
 )
 from app.modules.metrics.models import MetricWindow
-from app.modules.projects.models import Endpoint, Project
+from app.modules.projects.access import require_owned_project, require_project
+from app.modules.projects.models import Endpoint
 
 
 router = APIRouter(prefix="/projects", tags=["load-tests"])
@@ -77,20 +80,6 @@ def _now() -> datetime:
 # --- Private helpers ---------------------------------------------------------
 
 
-def _project(db: Session, project_id: UUID) -> Project:
-    project = db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
-
-
-def _owned_project(db: Session, project_id: UUID, user: User) -> Project:
-    project = _project(db, project_id)
-    if project.owner_id != user.id:
-        raise HTTPException(status_code=403, detail="Project owner required")
-    return project
-
-
 def _authorized_endpoint(db: Session, project_id: UUID, endpoint_id: UUID) -> Endpoint:
     endpoint = db.scalar(
         select(Endpoint).where(
@@ -110,29 +99,6 @@ def _authorized_endpoint(db: Session, project_id: UUID, endpoint_id: UUID) -> En
     return endpoint
 
 
-def _scenario(db: Session, project_id: UUID, scenario_id: UUID) -> TestScenario:
-    scenario = db.scalar(
-        select(TestScenario).where(
-            TestScenario.id == scenario_id, TestScenario.project_id == project_id
-        )
-    )
-    if scenario is None:
-        raise HTTPException(status_code=404, detail="Scenario not found")
-    return scenario
-
-
-def _execution(db: Session, scenario_id: UUID, execution_id: UUID) -> TestExecution:
-    execution = db.scalar(
-        select(TestExecution).where(
-            TestExecution.id == execution_id,
-            TestExecution.scenario_id == scenario_id,
-        )
-    )
-    if execution is None:
-        raise HTTPException(status_code=404, detail="Execution not found")
-    return execution
-
-
 def _commit(db: Session, detail: str) -> None:
     try:
         db.commit()
@@ -150,7 +116,7 @@ def list_scenarios(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[TestScenario]:
-    _project(db, project_id)
+    require_project(db, project_id)
     return list(
         db.scalars(
             select(TestScenario)
@@ -169,7 +135,7 @@ def create_scenario(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> TestScenario:
-    _owned_project(db, project_id, user)
+    require_owned_project(db, project_id, user)
     _authorized_endpoint(db, project_id, request.endpoint_id)
     scenario = TestScenario(
         project_id=project_id, created_by=user.id, **request.model_dump()
@@ -189,8 +155,8 @@ def get_scenario(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> TestScenario:
-    _project(db, project_id)
-    return _scenario(db, project_id, scenario_id)
+    require_project(db, project_id)
+    return require_scenario(db, project_id, scenario_id)
 
 
 @router.put(
@@ -203,8 +169,8 @@ def update_scenario(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> TestScenario:
-    _owned_project(db, project_id, user)
-    scenario = _scenario(db, project_id, scenario_id)
+    require_owned_project(db, project_id, user)
+    scenario = require_scenario(db, project_id, scenario_id)
     _authorized_endpoint(db, project_id, request.endpoint_id)
     for key, value in request.model_dump().items():
         setattr(scenario, key, value)
@@ -220,8 +186,8 @@ def delete_scenario(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> None:
-    _owned_project(db, project_id, user)
-    scenario = _scenario(db, project_id, scenario_id)
+    require_owned_project(db, project_id, user)
+    scenario = require_scenario(db, project_id, scenario_id)
     db.delete(scenario)
     _commit(db, "Remove dependent executions before deleting the scenario")
 
@@ -250,8 +216,8 @@ def list_executions(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[TestExecution]:
-    _project(db, project_id)
-    _scenario(db, project_id, scenario_id)
+    require_project(db, project_id)
+    require_scenario(db, project_id, scenario_id)
     return list(
         db.scalars(
             select(TestExecution)
@@ -273,14 +239,16 @@ def create_execution(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> TestExecution:
-    _owned_project(db, project_id, user)
-    scenario = _scenario(db, project_id, scenario_id)
+    require_owned_project(db, project_id, user)
+    scenario = require_scenario(db, project_id, scenario_id)
     snapshot = {field: getattr(scenario, field) for field in _SNAPSHOT_FIELDS}
+    endpoint = _authorized_endpoint(db, project_id, scenario.endpoint_id)
     execution = TestExecution(
         scenario_id=scenario.id,
         initiated_by=user.id,
         status=ExecutionStatus.PENDING,
         authorization_acknowledged=request.authorization_acknowledged,
+        target_snapshot=capture_target(endpoint),
         **snapshot,
     )
     db.add(execution)
@@ -300,9 +268,9 @@ def get_execution(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> TestExecution:
-    _project(db, project_id)
-    _scenario(db, project_id, scenario_id)
-    return _execution(db, scenario_id, execution_id)
+    require_project(db, project_id)
+    require_scenario(db, project_id, scenario_id)
+    return require_execution(db, scenario_id, execution_id)
 
 
 @router.get(
@@ -316,9 +284,9 @@ def list_metric_windows(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[MetricWindow]:
-    _project(db, project_id)
-    _scenario(db, project_id, scenario_id)
-    _execution(db, scenario_id, execution_id)
+    require_project(db, project_id)
+    require_scenario(db, project_id, scenario_id)
+    require_execution(db, scenario_id, execution_id)
     return list(
         db.scalars(
             select(MetricWindow)
@@ -334,9 +302,9 @@ def list_metric_windows(
 def _load_owned_execution(
     db: Session, project_id: UUID, scenario_id: UUID, execution_id: UUID, user: User
 ) -> TestExecution:
-    _owned_project(db, project_id, user)
-    _scenario(db, project_id, scenario_id)
-    return _execution(db, scenario_id, execution_id)
+    require_owned_project(db, project_id, user)
+    require_scenario(db, project_id, scenario_id)
+    return require_execution(db, scenario_id, execution_id)
 
 
 @router.post(
@@ -359,8 +327,10 @@ async def start_execution(
     # Revalidate the target authorization now: it may have been revoked after
     # the scenario/execution was created. Fail fast and clearly here instead of
     # letting the engine move the execution to FAILED asynchronously.
-    scenario = _scenario(db, project_id, scenario_id)
-    _authorized_endpoint(db, project_id, scenario.endpoint_id)
+    try:
+        resolve_execution_target(db, execution)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     _ensure_transition(execution.status, ExecutionStatus.RUNNING)
     execution.status = ExecutionStatus.RUNNING
     execution.started_at = _now()

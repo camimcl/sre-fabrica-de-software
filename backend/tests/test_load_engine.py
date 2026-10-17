@@ -6,11 +6,12 @@ SQLite engine, injected by monkeypatching get_engine in the engine module.
 """
 
 import asyncio
+import json
 import threading
 import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, select, event
@@ -27,6 +28,7 @@ from app.modules.intelligence.contracts import RiskPredictionResult
 from app.modules.intelligence.models import RiskPrediction
 from app.modules.load_tests import engine as load_engine
 from app.modules.load_tests.models import TestExecution, TestScenario
+from app.modules.load_tests.target import capture_target
 from app.modules.metrics.models import MetricWindow
 from app.modules.projects.models import Endpoint, Project
 
@@ -131,6 +133,7 @@ def _seed(factory: sessionmaker, base_url: str, **scenario_over) -> uuid4:
             p95_limit_ms=scenario.p95_limit_ms,
             error_rate_limit=scenario.error_rate_limit,
             authorization_acknowledged=True,
+            target_snapshot=capture_target(endpoint),
         )
         db.add(execution)
         db.commit()
@@ -183,6 +186,11 @@ def test_engine_completes_and_records_windows(db_engine, target) -> None:
     asyncio.run(load_engine.run_execution(execution_id, event))
 
     assert _status(db_engine, execution_id) == ExecutionStatus.COMPLETED
+    with db_engine() as db:
+        recorded = json.loads(db.get(TestExecution, execution_id).target_snapshot)
+        assert recorded["base_url"] == target
+        assert recorded["http_method"] == "GET"
+        assert recorded["window_duration_ms"] == load_engine.WINDOW_DURATION_MS
     windows = _windows(db_engine, execution_id)
     assert len(windows) >= 1
     first = windows[0]
@@ -190,6 +198,62 @@ def test_engine_completes_and_records_windows(db_engine, target) -> None:
     assert first.success_count == first.request_count  # target returns 200
     assert 0 <= float(first.error_rate) <= 1
     assert len(_decisions(db_engine, execution_id)) == len(windows)
+
+
+def test_load_plan_is_read_only_and_uses_creation_snapshot(db_engine, target, monkeypatch) -> None:
+    execution_id = _seed(db_engine, target)
+    with db_engine() as db:
+        execution = db.get(TestExecution, execution_id)
+        snapshot = execution.target_snapshot
+        scenario = db.get(TestScenario, execution.scenario_id)
+        replacement = Endpoint(
+            project_id=scenario.project_id, name="Replacement",
+            base_url="http://127.0.0.1:9/should-not-be-used", http_method="POST",
+            authorization_confirmed=True, authorization_evidence="test",
+        )
+        db.add(replacement)
+        db.flush()
+        scenario.endpoint_id = replacement.id
+        db.commit()
+
+    def reject_write(*args, **kwargs):
+        raise AssertionError("Loading a plan must not commit")
+
+    statements = []
+    def record_sql(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement.lstrip().split()[0].upper())
+
+    engine = db_engine.kw["bind"]
+    event.listen(engine, "before_cursor_execute", record_sql)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(Session, "commit", reject_write)
+            # SQLAlchemy may call flush as a no-op before SELECT; inspect SQL too.
+            plan = load_engine._load_plan(execution_id)
+            assert load_engine._load_plan(execution_id) == plan
+        assert statements and set(statements) == {"SELECT"}
+    finally:
+        event.remove(engine, "before_cursor_execute", record_sql)
+    assert plan["base_url"] == target
+    assert plan["http_method"] == "GET"
+    assert plan["window_duration_ms"] == json.loads(snapshot)["window_duration_ms"]
+    with db_engine() as db:
+        assert db.get(TestExecution, execution_id).target_snapshot == snapshot
+
+
+def test_engine_rejects_changed_target_without_refreshing_snapshot(db_engine, target) -> None:
+    execution_id = _seed(db_engine, target)
+    with db_engine() as db:
+        execution = db.get(TestExecution, execution_id)
+        snapshot = execution.target_snapshot
+        endpoint = db.get(Endpoint, UUID(json.loads(snapshot)["endpoint_id"]))
+        endpoint.base_url = "http://127.0.0.1:9/changed"
+        db.commit()
+    asyncio.run(load_engine.run_execution(execution_id, asyncio.Event()))
+    assert _status(db_engine, execution_id) == ExecutionStatus.FAILED
+    assert not _windows(db_engine, execution_id)
+    with db_engine() as db:
+        assert db.get(TestExecution, execution_id).target_snapshot == snapshot
 
 
 def test_engine_counts_errors(db_engine, target, monkeypatch) -> None:

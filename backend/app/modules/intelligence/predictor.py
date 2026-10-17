@@ -62,6 +62,9 @@ class SklearnRiskPredictor:
             raise ArtifactValidationError("Model artifact version is incompatible")
         self._estimator = artifact["estimator"]
         self._version = model.version
+        self._decision_threshold = float(artifact.get("decision_threshold", 0.5))
+        if not 0 < self._decision_threshold < 1:
+            raise ArtifactValidationError("Model decision threshold is invalid")
 
     def predict_risk(self, features: MetricFeatures) -> RiskPredictionResult:
         started = time.perf_counter()
@@ -71,7 +74,7 @@ class SklearnRiskPredictor:
         latency_ms = max(0, round((time.perf_counter() - started) * 1000))
         return RiskPredictionResult(
             probability=probability,
-            predicted_degradation=probability >= 0.5,
+            predicted_degradation=probability >= self._decision_threshold,
             model_version=self._version,
             inference_latency_ms=latency_ms,
         )

@@ -15,6 +15,17 @@ export async function api<T>(
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
     const detail = data.detail
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) => {
+          if (!item || typeof item !== 'object') return null
+          const field = Array.isArray(item.loc) ? item.loc.at(-1) : null
+          const message = typeof item.msg === 'string' ? item.msg : null
+          return message ? `${field ? `${field}: ` : ''}${message}` : null
+        })
+        .filter(Boolean)
+      throw new Error(messages.length ? messages.join(' · ') : `Falha na operação (${response.status})`)
+    }
     throw new Error(
       typeof detail === 'string' ? detail : `Falha na operação (${response.status})`,
     )

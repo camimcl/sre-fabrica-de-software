@@ -22,6 +22,8 @@ class DiagramSchemaAlignmentTest(unittest.TestCase):
             "risk_predictions",
             "control_decisions",
             "execution_reports",
+            "comparison_reports",
+            "comparison_report_executions",
         ):
             self.assertIn(table, source)
 
@@ -35,6 +37,7 @@ class DiagramSchemaAlignmentTest(unittest.TestCase):
             "projects ||--o{ endpoints : project_id",
             "test_executions ||--o{ metric_windows : execution_id",
             "metric_windows ||--o| control_decisions : metric_window_id",
+            "comparison_reports ||--|{ comparison_report_executions : comparison_report_id",
         ):
             self.assertIn(relationship, source)
 

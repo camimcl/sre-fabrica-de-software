@@ -14,6 +14,10 @@ erDiagram
     metric_windows ||--o| control_decisions : metric_window_id
     risk_predictions o|--o| control_decisions : risk_prediction_id
     test_executions ||--o| execution_reports : execution_id
+    projects ||--o{ comparison_reports : project_id
+    users ||--o{ comparison_reports : created_by
+    comparison_reports ||--|{ comparison_report_executions : comparison_report_id
+    test_executions ||--o{ comparison_report_executions : execution_id
 
     users {
       UUID id PK
@@ -53,6 +57,7 @@ erDiagram
       execution_status status
       control_strategy strategy
       INTEGER ramp_up_per_window
+      TEXT target_snapshot
     }
     metric_windows {
       UUID id PK
@@ -94,4 +99,23 @@ erDiagram
       INTEGER total_requests
       NUMERIC average_throughput_rps
       NUMERIC final_error_rate
+    }
+    comparison_reports {
+      UUID id PK
+      UUID project_id FK
+      UUID created_by FK
+      VARCHAR name
+      INTEGER repetitions_per_strategy
+      VARCHAR conditions_fingerprint
+      TEXT conditions_json
+      TEXT results_json
+      TEXT conclusion
+      TIMESTAMPTZ generated_at
+    }
+    comparison_report_executions {
+      UUID id PK
+      UUID comparison_report_id FK
+      UUID execution_id FK
+      control_strategy strategy
+      INTEGER repetition_number
     }

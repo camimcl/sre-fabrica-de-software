@@ -109,6 +109,7 @@ CREATE TABLE test_executions (
     started_at TIMESTAMPTZ,
     ended_at TIMESTAMPTZ,
     cancellation_reason TEXT,
+    target_snapshot TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT ck_execution_duration CHECK (duration_seconds > 0),
     CONSTRAINT ck_execution_concurrency CHECK (initial_concurrency > 0 AND max_concurrency >= initial_concurrency),
@@ -200,6 +201,33 @@ CREATE TABLE execution_reports (
     )
 );
 
+CREATE TABLE comparison_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    name VARCHAR(120) NOT NULL,
+    repetitions_per_strategy INTEGER NOT NULL,
+    conditions_fingerprint VARCHAR(64) NOT NULL,
+    conditions_json TEXT NOT NULL,
+    results_json TEXT NOT NULL,
+    conclusion TEXT NOT NULL,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_comparison_repetitions CHECK (repetitions_per_strategy >= 3)
+);
+
+CREATE TABLE comparison_report_executions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    comparison_report_id UUID NOT NULL REFERENCES comparison_reports(id) ON DELETE CASCADE,
+    execution_id UUID NOT NULL REFERENCES test_executions(id) ON DELETE RESTRICT,
+    strategy control_strategy NOT NULL,
+    repetition_number INTEGER NOT NULL,
+    CONSTRAINT ck_comparison_repetition_number CHECK (repetition_number > 0),
+    CONSTRAINT uq_comparison_report_execution UNIQUE (comparison_report_id, execution_id),
+    CONSTRAINT uq_comparison_strategy_repetition UNIQUE (
+        comparison_report_id, strategy, repetition_number
+    )
+);
+
 CREATE INDEX ix_projects_owner_id ON projects(owner_id);
 CREATE INDEX ix_endpoints_project_id ON endpoints(project_id);
 CREATE INDEX ix_scenarios_project_id ON test_scenarios(project_id);
@@ -208,4 +236,6 @@ CREATE INDEX ix_executions_scenario_created ON test_executions(scenario_id, crea
 CREATE INDEX ix_metric_windows_execution_time ON metric_windows(execution_id, window_started_at);
 CREATE INDEX ix_predictions_model_version ON risk_predictions(model_version_id);
 CREATE INDEX ix_model_versions_status ON model_versions(status);
+CREATE INDEX ix_comparison_reports_project_generated
+    ON comparison_reports(project_id, generated_at);
 CREATE UNIQUE INDEX uq_model_single_approved ON model_versions(status) WHERE status = 'APPROVED';

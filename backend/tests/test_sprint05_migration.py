@@ -59,7 +59,11 @@ def test_sprint05_migration_preserves_history_and_reports_conflicts(monkeypatch,
             with database.connect() as connection:
                 assert connection.execute(select(tables['test_executions'])).mappings().one() == before
                 assert connection.scalar(text('SELECT ramp_up_per_window FROM test_executions')) == 2
-                assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261001_0004'
+                assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '20261016_0006'
+                assert connection.scalar(text('SELECT target_snapshot FROM test_executions')) is None
+                assert {'comparison_reports', 'comparison_report_executions'} <= set(
+                    inspect(database).get_table_names()
+                )
     finally:
         database.dispose()
         # Only the unique schema created above in the explicitly disposable test DB.
