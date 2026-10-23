@@ -31,3 +31,10 @@ class ModelStatus(StrEnum):
     CANDIDATE = "CANDIDATE"
     APPROVED = "APPROVED"
     RETIRED = "RETIRED"
+
+
+class AuditAction(StrEnum):
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+    EXECUTE = "EXECUTE"
