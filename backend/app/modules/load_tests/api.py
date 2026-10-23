@@ -18,7 +18,8 @@ from app.core.query import (
     validate_date_range,
 )
 from app.db.session import get_db
-from app.db.types import ControlStrategy, ExecutionStatus
+from app.db.types import AuditAction, ControlStrategy, ExecutionStatus
+from app.modules.audit.service import record_operation
 from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
 from app.modules.load_tests import engine as load_engine
@@ -205,6 +206,15 @@ def create_scenario(
         project_id=project_id, created_by=user.id, **request.model_dump()
     )
     db.add(scenario)
+    db.flush()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.CREATE,
+        entity_type="scenario",
+        entity_id=scenario.id,
+        after={"name": scenario.name, "strategy": scenario.strategy.value},
+    )
     _commit(db, "Scenario could not be created")
     db.refresh(scenario)
     return scenario
@@ -398,6 +408,14 @@ async def start_execution(
     _ensure_transition(execution.status, ExecutionStatus.RUNNING)
     execution.status = ExecutionStatus.RUNNING
     execution.started_at = _now()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.EXECUTE,
+        entity_type="execution",
+        entity_id=execution.id,
+        after={"status": "RUNNING"},
+    )
     _commit(db, "Execution could not be started")
     db.refresh(execution)
     if ENGINE_ENABLED:
