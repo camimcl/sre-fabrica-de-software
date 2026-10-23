@@ -11,6 +11,7 @@ from app.modules.projects.api import router as projects_router
 from app.modules.reports.api import router as reports_router
 from app.modules.audit.api import router as audit_router
 from app.modules.dashboard.api import router as dashboard_router
+from app.modules.exports.api import router as exports_router
 
 
 app = FastAPI(title="LoadForge API", version="0.7.0")
@@ -22,6 +23,7 @@ app.include_router(intelligence_execution_router)
 app.include_router(reports_router)
 app.include_router(dashboard_router)
 app.include_router(audit_router)
+app.include_router(exports_router)
 
 
 @app.get("/health/live", tags=["health"])
