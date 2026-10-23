@@ -5,7 +5,7 @@ and do not commit or mutate data.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Generic, TypeVar
 
 from fastapi import HTTPException
@@ -45,13 +45,38 @@ def normalized_search(term: str | None) -> str | None:
     return cleaned or None
 
 
-def validate_date_range(
+def normalize_datetime(value: datetime | None) -> datetime | None:
+    """Return a timezone-aware datetime in UTC, or None.
+
+    Naive datetimes are assumed to be UTC. This keeps comparisons and column
+    filters consistent whether the client sends aware or naive timestamps,
+    avoiding runtime errors from mixing the two.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def normalized_range(
     date_from: datetime | None, date_to: datetime | None
-) -> None:
-    if date_from is not None and date_to is not None and date_from > date_to:
+) -> tuple[datetime | None, datetime | None]:
+    """Normalize both bounds to UTC-aware and validate their order."""
+    start = normalize_datetime(date_from)
+    end = normalize_datetime(date_to)
+    if start is not None and end is not None and start > end:
         raise HTTPException(
             status_code=422, detail="date_from must not be after date_to"
         )
+    return start, end
+
+
+def validate_date_range(
+    date_from: datetime | None, date_to: datetime | None
+) -> None:
+    """Validate order of a date range, tolerating mixed tz-awareness."""
+    normalized_range(date_from, date_to)
 
 
 def paginate(

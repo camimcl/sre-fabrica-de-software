@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.query import validate_date_range
+from app.core.query import normalized_range
 from app.db.session import get_db
 from app.db.types import ControlStrategy, ExecutionStatus
 from app.modules.auth.api import current_user
@@ -43,17 +43,17 @@ def project_dashboard(
     db: Session = Depends(get_db),
 ) -> DashboardResponse:
     require_project(db, project_id)
-    validate_date_range(date_from, date_to)
+    start, end = normalized_range(date_from, date_to)
 
     base = (
         select(TestExecution)
         .join(TestScenario, TestScenario.id == TestExecution.scenario_id)
         .where(TestScenario.project_id == project_id)
     )
-    if date_from is not None:
-        base = base.where(TestExecution.created_at >= date_from)
-    if date_to is not None:
-        base = base.where(TestExecution.created_at <= date_to)
+    if start is not None:
+        base = base.where(TestExecution.created_at >= start)
+    if end is not None:
+        base = base.where(TestExecution.created_at <= end)
     executions = list(db.scalars(base))
 
     by_status: dict[str, int] = {status.value: 0 for status in ExecutionStatus}

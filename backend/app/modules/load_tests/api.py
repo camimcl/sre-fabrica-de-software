@@ -13,9 +13,9 @@ from app.core.query import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
     escape_like,
+    normalized_range,
     normalized_search,
     paginate,
-    validate_date_range,
 )
 from app.db.session import get_db
 from app.db.types import AuditAction, ControlStrategy, ExecutionStatus
@@ -61,7 +61,7 @@ def query_project_executions(
     db: Session = Depends(get_db),
 ) -> ExecutionPage:
     require_project(db, project_id)
-    validate_date_range(date_from, date_to)
+    start, end = normalized_range(date_from, date_to)
     statement = (
         select(TestExecution)
         .join(TestScenario, TestScenario.id == TestExecution.scenario_id)
@@ -73,10 +73,10 @@ def query_project_executions(
         statement = statement.where(TestExecution.strategy == strategy)
     if initiated_by is not None:
         statement = statement.where(TestExecution.initiated_by == initiated_by)
-    if date_from is not None:
-        statement = statement.where(TestExecution.created_at >= date_from)
-    if date_to is not None:
-        statement = statement.where(TestExecution.created_at <= date_to)
+    if start is not None:
+        statement = statement.where(TestExecution.created_at >= start)
+    if end is not None:
+        statement = statement.where(TestExecution.created_at <= end)
     term = normalized_search(search)
     if term is not None:
         statement = statement.where(
@@ -440,9 +440,19 @@ def complete_execution(
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
     _reject_if_engine_active(execution.id)
+    previous = execution.status.value
     _ensure_transition(execution.status, ExecutionStatus.COMPLETED)
     execution.status = ExecutionStatus.COMPLETED
     execution.ended_at = _now()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.EXECUTE,
+        entity_type="execution",
+        entity_id=execution.id,
+        before={"status": previous},
+        after={"status": "COMPLETED", "origin": "user"},
+    )
     _commit(db, "Execution could not be completed")
     db.refresh(execution)
     return execution
@@ -461,9 +471,19 @@ def fail_execution(
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
     _reject_if_engine_active(execution.id)
+    previous = execution.status.value
     _ensure_transition(execution.status, ExecutionStatus.FAILED)
     execution.status = ExecutionStatus.FAILED
     execution.ended_at = _now()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.EXECUTE,
+        entity_type="execution",
+        entity_id=execution.id,
+        before={"status": previous},
+        after={"status": "FAILED", "origin": "user"},
+    )
     _commit(db, "Execution could not be marked as failed")
     db.refresh(execution)
     return execution
@@ -482,9 +502,11 @@ async def cancel_execution(
     db: Session = Depends(get_db),
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
+    previous = execution.status.value
     _ensure_transition(execution.status, ExecutionStatus.CANCELLED)
     # If the engine is actively driving this execution, signal it to stop and
-    # let it finalize state (effective emergency stop). Otherwise cancel here.
+    # let it finalize state (effective emergency stop). The engine records the
+    # audit entry (origin "engine") to avoid a duplicate here.
     if ENGINE_ENABLED and load_engine.registry.is_running(execution.id):
         load_engine.registry.cancel(execution.id)
         execution.cancellation_reason = request.cancellation_reason
@@ -494,6 +516,19 @@ async def cancel_execution(
     execution.status = ExecutionStatus.CANCELLED
     execution.cancellation_reason = request.cancellation_reason
     execution.ended_at = _now()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.EXECUTE,
+        entity_type="execution",
+        entity_id=execution.id,
+        before={"status": previous},
+        after={
+            "status": "CANCELLED",
+            "origin": "user",
+            "reason": request.cancellation_reason,
+        },
+    )
     _commit(db, "Execution could not be cancelled")
     db.refresh(execution)
     return execution

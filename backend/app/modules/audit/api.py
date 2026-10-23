@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.query import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate, validate_date_range
+from app.core.query import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    normalized_range,
+    paginate,
+)
 from app.db.session import get_db
 from app.db.types import AuditAction
 from app.modules.audit.models import OperationLog
@@ -29,7 +34,7 @@ def list_operation_logs(
     _: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> OperationLogPage:
-    validate_date_range(date_from, date_to)
+    start, end = normalized_range(date_from, date_to)
     statement = select(OperationLog)
     if actor_id is not None:
         statement = statement.where(OperationLog.actor_id == actor_id)
@@ -37,10 +42,10 @@ def list_operation_logs(
         statement = statement.where(OperationLog.action == action)
     if entity_type is not None:
         statement = statement.where(OperationLog.entity_type == entity_type)
-    if date_from is not None:
-        statement = statement.where(OperationLog.created_at >= date_from)
-    if date_to is not None:
-        statement = statement.where(OperationLog.created_at <= date_to)
+    if start is not None:
+        statement = statement.where(OperationLog.created_at >= start)
+    if end is not None:
+        statement = statement.where(OperationLog.created_at <= end)
     statement = statement.order_by(
         OperationLog.created_at.desc(), OperationLog.id.desc()
     )
