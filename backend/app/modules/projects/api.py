@@ -6,6 +6,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.db.types import AuditAction
+from app.modules.audit.service import record_operation
 from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
 from app.modules.projects.access import require_owned_project, require_project
@@ -55,6 +57,15 @@ def create_project(
 ) -> Project:
     project = Project(owner_id=user.id, **request.model_dump())
     db.add(project)
+    db.flush()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.CREATE,
+        entity_type="project",
+        entity_id=project.id,
+        after={"name": project.name, "description": project.description},
+    )
     _commit(db, "A project with this name already exists for this owner")
     db.refresh(project)
     return project
@@ -77,8 +88,18 @@ def update_project(
     db: Session = Depends(get_db),
 ) -> Project:
     project = require_owned_project(db, project_id, user)
+    before = {"name": project.name, "description": project.description}
     for key, value in request.model_dump().items():
         setattr(project, key, value)
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.UPDATE,
+        entity_type="project",
+        entity_id=project.id,
+        before=before,
+        after={"name": project.name, "description": project.description},
+    )
     _commit(db, "A project with this name already exists for this owner")
     db.refresh(project)
     return project
@@ -91,6 +112,14 @@ def delete_project(
     db: Session = Depends(get_db),
 ) -> None:
     project = require_owned_project(db, project_id, user)
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.DELETE,
+        entity_type="project",
+        entity_id=project.id,
+        before={"name": project.name},
+    )
     db.delete(project)
     _commit(db, "Remove dependent endpoints and scenarios before deleting the project")
 
@@ -123,6 +152,15 @@ def create_endpoint(
     values["base_url"] = str(request.base_url)
     endpoint = Endpoint(project_id=project_id, **values)
     db.add(endpoint)
+    db.flush()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.CREATE,
+        entity_type="endpoint",
+        entity_id=endpoint.id,
+        after={"name": endpoint.name, "base_url": endpoint.base_url},
+    )
     _commit(db, "Endpoint could not be created")
     db.refresh(endpoint)
     return endpoint
@@ -149,10 +187,20 @@ def update_endpoint(
 ) -> Endpoint:
     require_owned_project(db, project_id, user)
     endpoint = _endpoint(db, project_id, endpoint_id)
+    before = {"name": endpoint.name, "base_url": endpoint.base_url}
     values = request.model_dump()
     values["base_url"] = str(request.base_url)
     for key, value in values.items():
         setattr(endpoint, key, value)
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.UPDATE,
+        entity_type="endpoint",
+        entity_id=endpoint.id,
+        before=before,
+        after={"name": endpoint.name, "base_url": endpoint.base_url},
+    )
     _commit(db, "Endpoint could not be updated")
     db.refresh(endpoint)
     return endpoint
@@ -166,5 +214,14 @@ def delete_endpoint(
     db: Session = Depends(get_db),
 ) -> None:
     require_owned_project(db, project_id, user)
-    db.delete(_endpoint(db, project_id, endpoint_id))
+    endpoint = _endpoint(db, project_id, endpoint_id)
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.DELETE,
+        entity_type="endpoint",
+        entity_id=endpoint.id,
+        before={"name": endpoint.name},
+    )
+    db.delete(endpoint)
     _commit(db, "Remove dependent scenarios before deleting the endpoint")
