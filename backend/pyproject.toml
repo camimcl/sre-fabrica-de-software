@@ -15,7 +15,12 @@ dependencies = [
   "reportlab>=4.0,<5",
   "joblib>=1.4,<2",
   "psycopg[binary]>=3.2,<4",
-  "scikit-learn>=1.5,<2",
+  # numpy/scipy pinned to ranges ABI-compatible with scikit-learn 1.5.x.
+  # scikit-learn 1.5 wheels are built against the numpy 1.x ABI, so numpy must
+  # stay below 2.0; scipy is pinned to a version that still supports numpy 1.x.
+  "numpy>=1.26,<2",
+  "scipy>=1.11,<1.14",
+  "scikit-learn>=1.5,<1.6",
   "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.30,<1",
 ]
