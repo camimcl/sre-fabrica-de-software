@@ -1,11 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.query import escape_like, normalized_search
+from app.db.types import UserRole as _UserRole
 from app.modules.projects.models import Project
 
 from app.core.security import (
@@ -145,8 +147,22 @@ def me(user: User = Depends(current_user)) -> User:
 
 
 @router.get("/users", response_model=list[UserResponse])
-def list_users(_: User = Depends(qa_user), db: Session = Depends(get_db)) -> list[User]:
-    return list(db.scalars(select(User).order_by(User.created_at, User.id)))
+def list_users(
+    search: str | None = Query(None),
+    role: _UserRole | None = Query(None),
+    _: User = Depends(qa_user),
+    db: Session = Depends(get_db),
+) -> list[User]:
+    statement = select(User).order_by(User.created_at, User.id)
+    if role is not None:
+        statement = statement.where(User.role == role)
+    term = normalized_search(search)
+    if term is not None:
+        pattern = f"%{escape_like(term)}%"
+        statement = statement.where(
+            or_(User.full_name.ilike(pattern, escape="\\"), User.email.ilike(pattern, escape="\\"))
+        )
+    return list(db.scalars(statement))
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)

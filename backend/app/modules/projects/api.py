@@ -1,10 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.query import escape_like, normalized_search
 from app.db.session import get_db
 from app.db.types import AuditAction
 from app.modules.audit.service import record_operation
@@ -44,9 +45,17 @@ def _commit(db: Session, detail: str) -> None:
 
 @router.get("", response_model=list[ProjectResponse])
 def list_projects(
-    _: User = Depends(current_user), db: Session = Depends(get_db)
+    search: str | None = Query(None),
+    _: User = Depends(current_user),
+    db: Session = Depends(get_db),
 ) -> list[Project]:
-    return list(db.scalars(select(Project).order_by(Project.created_at, Project.id)))
+    statement = select(Project).order_by(Project.created_at, Project.id)
+    term = normalized_search(search)
+    if term is not None:
+        statement = statement.where(
+            Project.name.ilike(f"%{escape_like(term)}%", escape="\\")
+        )
+    return list(db.scalars(statement))
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)

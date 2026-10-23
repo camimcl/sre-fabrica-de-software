@@ -1,15 +1,24 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import asyncio
+from datetime import datetime as _datetime
 
+from app.core.query import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    escape_like,
+    normalized_search,
+    paginate,
+    validate_date_range,
+)
 from app.db.session import get_db
-from app.db.types import ExecutionStatus
+from app.db.types import ControlStrategy, ExecutionStatus
 from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
 from app.modules.load_tests import engine as load_engine
@@ -19,6 +28,7 @@ from app.modules.load_tests.target import capture_target, resolve_execution_targ
 from app.modules.load_tests.schemas import (
     ExecutionCancelRequest,
     ExecutionCreateRequest,
+    ExecutionPage,
     ExecutionResponse,
     MetricWindowResponse,
     ScenarioResponse,
@@ -30,6 +40,52 @@ from app.modules.projects.models import Endpoint
 
 
 router = APIRouter(prefix="/projects", tags=["load-tests"])
+
+
+# --- Aggregated executions query (filters, search, pagination) --------------
+
+
+@router.get("/{project_id}/executions", response_model=ExecutionPage)
+def query_project_executions(
+    project_id: UUID,
+    status: ExecutionStatus | None = Query(None),
+    strategy: ControlStrategy | None = Query(None),
+    initiated_by: UUID | None = Query(None),
+    date_from: _datetime | None = Query(None),
+    date_to: _datetime | None = Query(None),
+    search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    _: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> ExecutionPage:
+    require_project(db, project_id)
+    validate_date_range(date_from, date_to)
+    statement = (
+        select(TestExecution)
+        .join(TestScenario, TestScenario.id == TestExecution.scenario_id)
+        .where(TestScenario.project_id == project_id)
+    )
+    if status is not None:
+        statement = statement.where(TestExecution.status == status)
+    if strategy is not None:
+        statement = statement.where(TestExecution.strategy == strategy)
+    if initiated_by is not None:
+        statement = statement.where(TestExecution.initiated_by == initiated_by)
+    if date_from is not None:
+        statement = statement.where(TestExecution.created_at >= date_from)
+    if date_to is not None:
+        statement = statement.where(TestExecution.created_at <= date_to)
+    term = normalized_search(search)
+    if term is not None:
+        statement = statement.where(
+            TestScenario.name.ilike(f"%{escape_like(term)}%", escape="\\")
+        )
+    statement = statement.order_by(
+        TestExecution.created_at.desc(), TestExecution.id.desc()
+    )
+    items, total = paginate(db, statement, page=page, page_size=page_size)
+    return ExecutionPage(items=items, total=total, page=page, page_size=page_size)
 
 
 # --- Execution state machine -------------------------------------------------
@@ -113,17 +169,25 @@ def _commit(db: Session, detail: str) -> None:
 @router.get("/{project_id}/scenarios", response_model=list[ScenarioResponse])
 def list_scenarios(
     project_id: UUID,
+    search: str | None = Query(None),
+    strategy: ControlStrategy | None = Query(None),
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[TestScenario]:
     require_project(db, project_id)
-    return list(
-        db.scalars(
-            select(TestScenario)
-            .where(TestScenario.project_id == project_id)
-            .order_by(TestScenario.created_at, TestScenario.id)
-        )
+    statement = (
+        select(TestScenario)
+        .where(TestScenario.project_id == project_id)
+        .order_by(TestScenario.created_at, TestScenario.id)
     )
+    if strategy is not None:
+        statement = statement.where(TestScenario.strategy == strategy)
+    term = normalized_search(search)
+    if term is not None:
+        statement = statement.where(
+            TestScenario.name.ilike(f"%{escape_like(term)}%", escape="\\")
+        )
+    return list(db.scalars(statement))
 
 
 @router.post(
