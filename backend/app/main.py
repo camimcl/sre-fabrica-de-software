@@ -20,10 +20,12 @@ app.include_router(projects_router)
 app.include_router(load_tests_router)
 app.include_router(intelligence_router)
 app.include_router(intelligence_execution_router)
+# Exports are registered before reports so the ".csv"/".pdf" comparison paths
+# match before the generic "/reports/comparisons/{comparison_id}" UUID route.
+app.include_router(exports_router)
 app.include_router(reports_router)
 app.include_router(dashboard_router)
 app.include_router(audit_router)
-app.include_router(exports_router)
 
 
 @app.get("/health/live", tags=["health"])
