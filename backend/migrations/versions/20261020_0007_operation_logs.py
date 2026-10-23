@@ -32,7 +32,7 @@ def upgrade() -> None:
             server_default=sa.text("gen_random_uuid()"),
             nullable=False,
         ),
-        sa.Column("actor_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("actor_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("action", audit_action, nullable=False),
         sa.Column("entity_type", sa.String(length=80), nullable=False),
         sa.Column("entity_id", postgresql.UUID(as_uuid=True), nullable=True),
@@ -43,7 +43,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["actor_id"], ["users.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["actor_id"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_operation_logs_created", "operation_logs", ["created_at"])

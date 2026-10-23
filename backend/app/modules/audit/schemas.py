@@ -10,7 +10,7 @@ class OperationLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    actor_id: UUID
+    actor_id: UUID | None
     action: AuditAction
     entity_type: str
     entity_id: UUID | None

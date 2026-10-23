@@ -243,7 +243,7 @@ CREATE UNIQUE INDEX uq_model_single_approved ON model_versions(status) WHERE sta
 
 CREATE TABLE operation_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    actor_id UUID NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    actor_id UUID REFERENCES users (id) ON DELETE SET NULL,
     action audit_action NOT NULL,
     entity_type VARCHAR(80) NOT NULL,
     entity_id UUID,
