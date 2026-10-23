@@ -138,10 +138,10 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
     if (!isQa) return
     const request = ++requestRef.current
     try {
-      const data = await api<OperationLogPage>(`/audit/logs?page=${logPage}&page_size=10`, 'GET', undefined, token)
+      const data = await api<OperationLogPage>(`/audit/logs?${queryString({ page: String(logPage), page_size: '10' })}`, 'GET', undefined, token)
       if (request === requestRef.current) setLogs(data)
     } catch (error) { report(error) }
-  }, [token, logPage, isQa, report])
+  }, [token, logPage, isQa, queryString, report])
 
   useEffect(() => { if (tab === 'dashboard') void loadDashboard() }, [tab, loadDashboard])
   useEffect(() => { if (tab === 'queries') void loadExecutions() }, [tab, loadExecutions])
@@ -167,8 +167,8 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
       </div>
 
       <div className="s7-period">
-        <label>De<input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></label>
-        <label>Até<input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></label>
+        <label>De<input type="date" value={dateFrom} onChange={(e) => { setPage(1); setLogPage(1); setDateFrom(e.target.value) }} /></label>
+        <label>Até<input type="date" value={dateTo} onChange={(e) => { setPage(1); setLogPage(1); setDateTo(e.target.value) }} /></label>
       </div>
 
       {tab === 'dashboard' && (loading && !dashboard ? <p className="empty compact">Carregando indicadores…</p> : dashboard && (
