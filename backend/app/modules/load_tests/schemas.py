@@ -129,3 +129,10 @@ class ExecutionResponse(BaseModel):
     ended_at: datetime | None
     cancellation_reason: str | None
     created_at: datetime
+
+
+class ExecutionPage(BaseModel):
+    items: list[ExecutionResponse]
+    total: int
+    page: int
+    page_size: int

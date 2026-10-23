@@ -1,5 +1,6 @@
 """Register every persisted model in SQLAlchemy metadata."""
 
+from app.modules.audit.models import OperationLog
 from app.modules.auth.models import User
 from app.modules.control.models import ControlDecision
 from app.modules.intelligence.models import ModelVersion, RiskPrediction
@@ -18,6 +19,7 @@ __all__ = [
     "ComparisonReport",
     "ComparisonReportExecution",
     "Endpoint",
+    "OperationLog",
     "ExecutionReport",
     "MetricWindow",
     "ModelVersion",

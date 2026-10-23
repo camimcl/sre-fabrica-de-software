@@ -3,9 +3,10 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api } from './api'
 import SprintFivePanel from './SprintFivePanel'
 import SprintSixReportsPanel from './SprintSixReportsPanel'
+import SprintSevenPanel from './SprintSevenPanel'
 
 type Role = 'QA' | 'VIEWER'
-type View = 'projects' | 'tests' | 'reports' | 'users'
+type View = 'projects' | 'tests' | 'reports' | 'dashboard' | 'users'
 type User = { id: string; full_name: string; email: string; role: Role }
 type Project = {
   id: string
@@ -67,6 +68,7 @@ export default function App() {
     projects: { eyebrow: 'Configuração', title: 'Projetos e endpoints', description: 'Organize os alvos autorizados antes de executar qualquer carga.' },
     tests: { eyebrow: 'Operação', title: 'Cenários e controle adaptativo', description: 'Execute carga, acompanhe métricas e administre o modelo local.' },
     reports: { eyebrow: 'Evidências', title: 'Histórico e relatórios', description: 'Meça e compare FIXED, RULES e AI_HYBRID em condições equivalentes.' },
+    dashboard: { eyebrow: 'Acompanhamento', title: 'Dashboard e auditoria', description: 'Indicadores reais, consultas com filtros, exportação e histórico de operações.' },
     users: { eyebrow: 'Administração', title: 'Usuários e acesso', description: 'Gerencie perfis e permissões do ambiente.' },
   }
 
@@ -280,6 +282,7 @@ export default function App() {
           <button className={activeView === 'projects' ? 'active' : ''} onClick={() => setActiveView('projects')}>Projetos</button>
           <button className={activeView === 'tests' ? 'active' : ''} onClick={() => setActiveView('tests')}>Execuções</button>
           <button className={activeView === 'reports' ? 'active' : ''} onClick={() => setActiveView('reports')}>Relatórios</button>
+          <button className={activeView === 'dashboard' ? 'active' : ''} onClick={() => setActiveView('dashboard')}>Dashboard</button>
           <button className={activeView === 'users' ? 'active' : ''} onClick={() => setActiveView('users')}>Usuários</button>
         </nav>}
         {user && <div className="account"><span>{user.full_name} <em>{user.role === 'QA' ? 'QA' : 'Visualizador'}</em></span><button className="link-button" onClick={logout}>Sair</button></div>}
@@ -303,7 +306,7 @@ export default function App() {
       ) : (
         <main className="workspace">
           <div className="page-heading"><div><span className="eyebrow">{viewCopy[activeView].eyebrow}</span><h1>{viewCopy[activeView].title}</h1><p>{viewCopy[activeView].description}</p></div><span className="role-pill">{user.role === 'QA' ? 'Acesso QA' : 'Somente leitura'}</span></div>
-          {(activeView === 'tests' || activeView === 'reports') && <div className="project-context"><div><span>Projeto ativo</span><strong>{selectedProject?.name ?? 'Nenhum projeto'}</strong></div><select aria-label="Projeto ativo" value={selectedId ?? ''} onChange={(event) => setSelectedId(event.target.value)}><option value="">Selecione um projeto</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div>}
+          {(activeView === 'tests' || activeView === 'reports' || activeView === 'dashboard') && <div className="project-context"><div><span>Projeto ativo</span><strong>{selectedProject?.name ?? 'Nenhum projeto'}</strong></div><select aria-label="Projeto ativo" value={selectedId ?? ''} onChange={(event) => setSelectedId(event.target.value)}><option value="">Selecione um projeto</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div>}
           {activeView === 'projects' && <div className="columns">
             <section className="card projects-card">
               <div className="section-heading"><h2>Projetos</h2><span>{projects.length}</span></div>
@@ -324,6 +327,8 @@ export default function App() {
           {activeView === 'tests' && !selectedProject && <p className="empty">Selecione ou crie um projeto antes de configurar cenários.</p>}
           {activeView === 'reports' && selectedProject && <SprintSixReportsPanel key={selectedProject.id} token={token} projectId={selectedProject.id} canEdit={canEdit} report={report} />}
           {activeView === 'reports' && !selectedProject && <p className="empty">Selecione um projeto para consultar o histórico e os relatórios.</p>}
+          {activeView === 'dashboard' && selectedProject && <SprintSevenPanel key={selectedProject.id} token={token} projectId={selectedProject.id} isQa={user.role === 'QA'} report={report} />}
+          {activeView === 'dashboard' && !selectedProject && <p className="empty">Selecione um projeto para visualizar o dashboard e a auditoria.</p>}
           {activeView === 'users' && <section className="card users-card standalone-card">
             <div className="section-heading">
               <div>

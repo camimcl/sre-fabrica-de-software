@@ -203,6 +203,12 @@ Os volumes nomeados `loadforge_pgdata` e `loadforge_model_artifacts` preservam, 
 | `POST` e `GET .../executions/{id}/report` | QA/Autenticado | Gera e consulta o relatório persistido de uma execução terminal. |
 | `POST /projects/{id}/reports/comparisons` | QA proprietário | Compara três estratégias em condições equivalentes e repetidas. |
 | `GET /projects/{id}/reports/comparisons` | Autenticado | Lista e recupera comparações persistidas. |
+| `GET /projects/{id}/dashboard` | Autenticado | Indicadores agregados reais com filtro de período (Sprint 07). |
+| `GET /projects/{id}/executions` | Autenticado | Execuções com busca, filtros (status, estratégia, período, usuário) e paginação. |
+| `GET /projects/{id}/exports/executions.csv` | Autenticado | Exporta o histórico de execuções em CSV respeitando os filtros. |
+| `GET .../executions/{id}/report.pdf` | Autenticado | Exporta o relatório de execução em PDF. |
+| `GET /projects/{id}/reports/comparisons/{id}.csv` e `.pdf` | Autenticado | Exporta a comparação em CSV e PDF. |
+| `GET /audit/logs` | QA | Consulta a trilha de auditoria de operações com filtros e paginação. |
 
 ### Testes
 

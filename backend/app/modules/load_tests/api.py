@@ -1,15 +1,25 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import asyncio
+from datetime import datetime as _datetime
 
+from app.core.query import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    escape_like,
+    normalized_range,
+    normalized_search,
+    paginate,
+)
 from app.db.session import get_db
-from app.db.types import ExecutionStatus
+from app.db.types import AuditAction, ControlStrategy, ExecutionStatus
+from app.modules.audit.service import record_operation
 from app.modules.auth.api import current_user, qa_user
 from app.modules.auth.models import User
 from app.modules.load_tests import engine as load_engine
@@ -19,6 +29,7 @@ from app.modules.load_tests.target import capture_target, resolve_execution_targ
 from app.modules.load_tests.schemas import (
     ExecutionCancelRequest,
     ExecutionCreateRequest,
+    ExecutionPage,
     ExecutionResponse,
     MetricWindowResponse,
     ScenarioResponse,
@@ -30,6 +41,52 @@ from app.modules.projects.models import Endpoint
 
 
 router = APIRouter(prefix="/projects", tags=["load-tests"])
+
+
+# --- Aggregated executions query (filters, search, pagination) --------------
+
+
+@router.get("/{project_id}/executions", response_model=ExecutionPage)
+def query_project_executions(
+    project_id: UUID,
+    status: ExecutionStatus | None = Query(None),
+    strategy: ControlStrategy | None = Query(None),
+    initiated_by: UUID | None = Query(None),
+    date_from: _datetime | None = Query(None),
+    date_to: _datetime | None = Query(None),
+    search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    _: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> ExecutionPage:
+    require_project(db, project_id)
+    start, end = normalized_range(date_from, date_to)
+    statement = (
+        select(TestExecution)
+        .join(TestScenario, TestScenario.id == TestExecution.scenario_id)
+        .where(TestScenario.project_id == project_id)
+    )
+    if status is not None:
+        statement = statement.where(TestExecution.status == status)
+    if strategy is not None:
+        statement = statement.where(TestExecution.strategy == strategy)
+    if initiated_by is not None:
+        statement = statement.where(TestExecution.initiated_by == initiated_by)
+    if start is not None:
+        statement = statement.where(TestExecution.created_at >= start)
+    if end is not None:
+        statement = statement.where(TestExecution.created_at <= end)
+    term = normalized_search(search)
+    if term is not None:
+        statement = statement.where(
+            TestScenario.name.ilike(f"%{escape_like(term)}%", escape="\\")
+        )
+    statement = statement.order_by(
+        TestExecution.created_at.desc(), TestExecution.id.desc()
+    )
+    items, total = paginate(db, statement, page=page, page_size=page_size)
+    return ExecutionPage(items=items, total=total, page=page, page_size=page_size)
 
 
 # --- Execution state machine -------------------------------------------------
@@ -113,17 +170,25 @@ def _commit(db: Session, detail: str) -> None:
 @router.get("/{project_id}/scenarios", response_model=list[ScenarioResponse])
 def list_scenarios(
     project_id: UUID,
+    search: str | None = Query(None),
+    strategy: ControlStrategy | None = Query(None),
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[TestScenario]:
     require_project(db, project_id)
-    return list(
-        db.scalars(
-            select(TestScenario)
-            .where(TestScenario.project_id == project_id)
-            .order_by(TestScenario.created_at, TestScenario.id)
-        )
+    statement = (
+        select(TestScenario)
+        .where(TestScenario.project_id == project_id)
+        .order_by(TestScenario.created_at, TestScenario.id)
     )
+    if strategy is not None:
+        statement = statement.where(TestScenario.strategy == strategy)
+    term = normalized_search(search)
+    if term is not None:
+        statement = statement.where(
+            TestScenario.name.ilike(f"%{escape_like(term)}%", escape="\\")
+        )
+    return list(db.scalars(statement))
 
 
 @router.post(
@@ -141,6 +206,15 @@ def create_scenario(
         project_id=project_id, created_by=user.id, **request.model_dump()
     )
     db.add(scenario)
+    db.flush()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.CREATE,
+        entity_type="scenario",
+        entity_id=scenario.id,
+        after={"name": scenario.name, "strategy": scenario.strategy.value},
+    )
     _commit(db, "Scenario could not be created")
     db.refresh(scenario)
     return scenario
@@ -334,6 +408,14 @@ async def start_execution(
     _ensure_transition(execution.status, ExecutionStatus.RUNNING)
     execution.status = ExecutionStatus.RUNNING
     execution.started_at = _now()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.EXECUTE,
+        entity_type="execution",
+        entity_id=execution.id,
+        after={"status": "RUNNING"},
+    )
     _commit(db, "Execution could not be started")
     db.refresh(execution)
     if ENGINE_ENABLED:
@@ -358,9 +440,19 @@ def complete_execution(
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
     _reject_if_engine_active(execution.id)
+    previous = execution.status.value
     _ensure_transition(execution.status, ExecutionStatus.COMPLETED)
     execution.status = ExecutionStatus.COMPLETED
     execution.ended_at = _now()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.EXECUTE,
+        entity_type="execution",
+        entity_id=execution.id,
+        before={"status": previous},
+        after={"status": "COMPLETED", "origin": "user"},
+    )
     _commit(db, "Execution could not be completed")
     db.refresh(execution)
     return execution
@@ -379,9 +471,19 @@ def fail_execution(
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
     _reject_if_engine_active(execution.id)
+    previous = execution.status.value
     _ensure_transition(execution.status, ExecutionStatus.FAILED)
     execution.status = ExecutionStatus.FAILED
     execution.ended_at = _now()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.EXECUTE,
+        entity_type="execution",
+        entity_id=execution.id,
+        before={"status": previous},
+        after={"status": "FAILED", "origin": "user"},
+    )
     _commit(db, "Execution could not be marked as failed")
     db.refresh(execution)
     return execution
@@ -400,9 +502,11 @@ async def cancel_execution(
     db: Session = Depends(get_db),
 ) -> TestExecution:
     execution = _load_owned_execution(db, project_id, scenario_id, execution_id, user)
+    previous = execution.status.value
     _ensure_transition(execution.status, ExecutionStatus.CANCELLED)
     # If the engine is actively driving this execution, signal it to stop and
-    # let it finalize state (effective emergency stop). Otherwise cancel here.
+    # let it finalize state (effective emergency stop). The engine records the
+    # audit entry (origin "engine") to avoid a duplicate here.
     if ENGINE_ENABLED and load_engine.registry.is_running(execution.id):
         load_engine.registry.cancel(execution.id)
         execution.cancellation_reason = request.cancellation_reason
@@ -412,6 +516,19 @@ async def cancel_execution(
     execution.status = ExecutionStatus.CANCELLED
     execution.cancellation_reason = request.cancellation_reason
     execution.ended_at = _now()
+    record_operation(
+        db,
+        actor_id=user.id,
+        action=AuditAction.EXECUTE,
+        entity_type="execution",
+        entity_id=execution.id,
+        before={"status": previous},
+        after={
+            "status": "CANCELLED",
+            "origin": "user",
+            "reason": request.cancellation_reason,
+        },
+    )
     _commit(db, "Execution could not be cancelled")
     db.refresh(execution)
     return execution

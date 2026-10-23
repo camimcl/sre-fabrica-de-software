@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -71,7 +71,10 @@ def _token(client: TestClient, email: str, password: str) -> dict[str, str]:
 
 
 def _project(client: TestClient, headers: dict[str, str]) -> str:
-    response = client.post("/projects", json={"name": "Load project"}, headers=headers)
+    # Unique name per call: projects enforce a unique (owner, name) constraint.
+    response = client.post(
+        "/projects", json={"name": f"Load project {uuid4()}"}, headers=headers
+    )
     assert response.status_code == 201, response.text
     return response.json()["id"]
 

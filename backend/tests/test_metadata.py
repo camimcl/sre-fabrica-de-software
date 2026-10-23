@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "execution_reports",
     "comparison_reports",
     "comparison_report_executions",
+    "operation_logs",
 }
 
 

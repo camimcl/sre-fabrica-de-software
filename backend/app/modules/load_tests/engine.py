@@ -19,11 +19,13 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_engine
 from app.db.types import (
+    AuditAction,
     ControlAction,
     ControlStrategy,
     ExecutionStatus,
     ModelStatus,
 )
+from app.modules.audit.service import record_operation
 from app.modules.control.contracts import ControlInput, RulesController
 from app.modules.control.models import ControlDecision
 from app.modules.intelligence.contracts import RiskPredictor
@@ -308,6 +310,18 @@ def _finalize_execution(
         execution.ended_at = _now()
         if reason is not None:
             execution.cancellation_reason = reason
+        after = {"status": status.value, "origin": "engine"}
+        if reason is not None:
+            after["reason"] = reason
+        record_operation(
+            db,
+            actor_id=execution.initiated_by,
+            action=AuditAction.EXECUTE,
+            entity_type="execution",
+            entity_id=execution.id,
+            before={"status": ExecutionStatus.RUNNING.value},
+            after=after,
+        )
         db.commit()
 
 

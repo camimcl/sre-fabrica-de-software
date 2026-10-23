@@ -5,6 +5,7 @@ CREATE TYPE execution_status AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'CANCEL
 CREATE TYPE control_strategy AS ENUM ('FIXED', 'RULES', 'AI_HYBRID');
 CREATE TYPE control_action AS ENUM ('INCREASE', 'HOLD', 'DECREASE', 'STOP');
 CREATE TYPE model_status AS ENUM ('CANDIDATE', 'APPROVED', 'RETIRED');
+CREATE TYPE audit_action AS ENUM ('CREATE', 'UPDATE', 'DELETE', 'EXECUTE');
 
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -239,3 +240,16 @@ CREATE INDEX ix_model_versions_status ON model_versions(status);
 CREATE INDEX ix_comparison_reports_project_generated
     ON comparison_reports(project_id, generated_at);
 CREATE UNIQUE INDEX uq_model_single_approved ON model_versions(status) WHERE status = 'APPROVED';
+
+CREATE TABLE operation_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    actor_id UUID REFERENCES users (id) ON DELETE SET NULL,
+    action audit_action NOT NULL,
+    entity_type VARCHAR(80) NOT NULL,
+    entity_id UUID,
+    summary TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_operation_logs_created ON operation_logs (created_at);
+CREATE INDEX ix_operation_logs_entity ON operation_logs (entity_type, entity_id);
