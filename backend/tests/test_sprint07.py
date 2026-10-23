@@ -160,3 +160,181 @@ def test_export_executions_csv_headers(api) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     assert "execution_id,scenario_name,strategy,status" in response.text
+
+
+# --- Regression tests for the PR review ------------------------------------
+
+
+def _endpoint(client, headers, project_id, confirmed=True) -> str:
+    payload = {
+        "name": "Target",
+        "base_url": "https://example.com/api",
+        "http_method": "GET",
+        "authorization_confirmed": confirmed,
+        "authorization_evidence": "ok" if confirmed else None,
+    }
+    return client.post(
+        f"/projects/{project_id}/endpoints", json=payload, headers=headers
+    ).json()["id"]
+
+
+def _scenario(client, headers, project_id, endpoint_id, name="S") -> str:
+    return client.post(
+        f"/projects/{project_id}/scenarios",
+        json={
+            "name": name,
+            "endpoint_id": endpoint_id,
+            "duration_seconds": 1,
+            "initial_concurrency": 1,
+            "max_concurrency": 2,
+            "ramp_up_per_window": 0,
+            "timeout_ms": 1000,
+            "strategy": "RULES",
+            "p95_limit_ms": 800,
+            "error_rate_limit": "0.5",
+        },
+        headers=headers,
+    ).json()["id"]
+
+
+def _execution(client, headers, project_id, scenario_id) -> str:
+    return client.post(
+        f"/projects/{project_id}/scenarios/{scenario_id}/executions",
+        json={"authorization_acknowledged": True},
+        headers=headers,
+    ).json()["id"]
+
+
+def test_comparison_export_routes_not_intercepted(api) -> None:
+    # A non-existent comparison .csv/.pdf must reach the export route (404),
+    # not be captured by the generic UUID route (which would 422).
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email)
+    project_id = _project(client, headers)
+    from uuid import uuid4
+
+    cid = uuid4()
+    csv = client.get(
+        f"/projects/{project_id}/reports/comparisons/{cid}.csv", headers=headers
+    )
+    pdf = client.get(
+        f"/projects/{project_id}/reports/comparisons/{cid}.pdf", headers=headers
+    )
+    assert csv.status_code == 404, csv.text
+    assert pdf.status_code == 404, pdf.text
+
+
+def test_execution_pdf_validates_scope(api) -> None:
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email)
+    project_id = _project(client, headers)
+    endpoint_id = _endpoint(client, headers, project_id)
+    scenario_id = _scenario(client, headers, project_id, endpoint_id)
+    execution_id = _execution(client, headers, project_id, scenario_id)
+    from uuid import uuid4
+
+    # Wrong scenario in the path must be rejected (404), not leak the report.
+    wrong = client.get(
+        f"/projects/{project_id}/scenarios/{uuid4()}/executions/{execution_id}/report.pdf",
+        headers=headers,
+    )
+    assert wrong.status_code == 404
+
+
+def test_csv_export_respects_initiated_by(api) -> None:
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email)
+    project_id = _project(client, headers)
+    endpoint_id = _endpoint(client, headers, project_id)
+    scenario_id = _scenario(client, headers, project_id, endpoint_id)
+    _execution(client, headers, project_id, scenario_id)
+    from uuid import uuid4
+
+    # Filter by a different user: CSV must contain only the header row.
+    response = client.get(
+        f"/projects/{project_id}/exports/executions.csv?initiated_by={uuid4()}",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data_lines = [line for line in response.text.splitlines() if line.strip()]
+    assert len(data_lines) == 1  # header only
+
+
+def test_csv_neutralizes_formula_injection(api) -> None:
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email)
+    # Project name starting with '=' would be a spreadsheet formula.
+    project_id = _project(client, headers, "=cmd|calc")
+    endpoint_id = _endpoint(client, headers, project_id)
+    scenario_id = _scenario(client, headers, project_id, endpoint_id, name="=DANGER()")
+    _execution(client, headers, project_id, scenario_id)
+    response = client.get(
+        f"/projects/{project_id}/exports/executions.csv", headers=headers
+    )
+    assert response.status_code == 200
+    # The scenario name cell must be prefixed with a quote, not a raw '='.
+    assert "'=DANGER()" in response.text
+    assert ",=DANGER()" not in response.text
+
+
+def test_mixed_timezone_dates_do_not_500(api) -> None:
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email)
+    project_id = _project(client, headers)
+    # date_from aware (with offset), date_to naive — must not raise 500.
+    url = (
+        f"/projects/{project_id}/executions"
+        "?date_from=2026-01-01T00:00:00%2B00:00&date_to=2026-12-31T23:59:59"
+    )
+    response = client.get(url, headers=headers)
+    assert response.status_code == 200, response.text
+    # Dashboard too.
+    dash = client.get(
+        f"/projects/{project_id}/dashboard?date_from=2026-01-01T00:00:00%2B00:00&date_to=2026-12-31T23:59:59",
+        headers=headers,
+    )
+    assert dash.status_code == 200, dash.text
+
+
+def test_duplicate_project_returns_409_without_audit(api) -> None:
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email)
+    _project(client, headers, "Unique name")
+    before = client.get("/audit/logs", headers=headers).json()["total"]
+    conflict = client.post("/projects", json={"name": "Unique name"}, headers=headers)
+    assert conflict.status_code == 409, conflict.text
+    after = client.get("/audit/logs", headers=headers).json()["total"]
+    assert after == before  # rejected op left no audit entry
+
+
+def test_manual_execution_transitions_are_audited(api, monkeypatch) -> None:
+    # Disable the load engine so manual transitions apply directly.
+    from app.modules.load_tests import api as load_tests_api
+
+    monkeypatch.setattr(load_tests_api, "ENGINE_ENABLED", False)
+    client, factory = api
+    qa = _qa(factory)
+    headers = _token(client, qa.email)
+    project_id = _project(client, headers)
+    endpoint_id = _endpoint(client, headers, project_id)
+    scenario_id = _scenario(client, headers, project_id, endpoint_id)
+    execution_id = _execution(client, headers, project_id, scenario_id)
+    base = f"/projects/{project_id}/scenarios/{scenario_id}/executions/{execution_id}"
+    assert client.post(f"{base}/start", headers=headers).status_code == 200
+    assert client.post(
+        f"{base}/cancel", json={"cancellation_reason": "manual stop"}, headers=headers
+    ).status_code == 200
+
+    logs = client.get(
+        "/audit/logs?entity_type=execution", headers=headers
+    ).json()["items"]
+    actions = [entry["summary"] for entry in logs]
+    # Both a RUNNING start and a CANCELLED transition were recorded.
+    assert any("RUNNING" in (s or "") for s in actions)
+    assert any("CANCELLED" in (s or "") for s in actions)
