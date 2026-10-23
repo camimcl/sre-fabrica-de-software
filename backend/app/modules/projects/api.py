@@ -43,6 +43,19 @@ def _commit(db: Session, detail: str) -> None:
         raise HTTPException(status_code=409, detail=detail) from exc
 
 
+def _flush(db: Session, detail: str) -> None:
+    """Flush pending INSERTs to surface integrity errors as 409 before audit.
+
+    A conflict must become a clean 409 (and leave no audit record), not a 500
+    raised later when the id is accessed.
+    """
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=detail) from exc
+
+
 @router.get("", response_model=list[ProjectResponse])
 def list_projects(
     search: str | None = Query(None),
@@ -64,9 +77,10 @@ def create_project(
     user: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> Project:
+    duplicate = "A project with this name already exists for this owner"
     project = Project(owner_id=user.id, **request.model_dump())
     db.add(project)
-    db.flush()
+    _flush(db, duplicate)
     record_operation(
         db,
         actor_id=user.id,
@@ -75,7 +89,7 @@ def create_project(
         entity_id=project.id,
         after={"name": project.name, "description": project.description},
     )
-    _commit(db, "A project with this name already exists for this owner")
+    _commit(db, duplicate)
     db.refresh(project)
     return project
 
@@ -161,7 +175,7 @@ def create_endpoint(
     values["base_url"] = str(request.base_url)
     endpoint = Endpoint(project_id=project_id, **values)
     db.add(endpoint)
-    db.flush()
+    _flush(db, "Endpoint could not be created")
     record_operation(
         db,
         actor_id=user.id,
