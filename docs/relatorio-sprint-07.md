@@ -53,7 +53,8 @@ O dashboard e as consultas operam sobre os dados reais de projetos, cenários, e
 
 ## Verificação realizada
 
-- Backend: suíte automatizada com 107 testes aprovados, zero falhas e zero ignorados, incluindo integração com PostgreSQL 16 descartável (`loadforge_test`). A cobertura inclui filtros conjuntivos, busca case-insensitive, paginação (limites e página além do total), dashboard com e sem dados, auditoria transacional (rollback descarta o log), ausência de segredos no resumo, restrição do log de auditoria ao QA, e exportação CSV (cabeçalho/escape) e PDF (tipo de conteúdo).
+- Backend: suíte automatizada com pytest. A cobertura inclui filtros conjuntivos, busca case-insensitive, validação de intervalo de datas, paginação (limites e página além do total), dashboard sem dados, restrição do log de auditoria ao QA, registro de operações de escrita, equivalência de filtros entre consulta e exportação CSV, neutralização de injeção de fórmula em CSV, validação de escopo na exportação PDF de execução, ordem de rotas das exportações de comparação, normalização de datas com e sem fuso horário, e rejeição de projeto duplicado (409) sem deixar registro de auditoria. Os testes do motor de carga cobrem geração real contra alvo local, coleta de métricas, cancelamento e registro de transições.
+- Integração com PostgreSQL 16 descartável (`loadforge_test`) sob o marcador `integration`, executável localmente com `LOADFORGE_TEST_DATABASE_URL` apontando para o banco migrado.
 - Frontend: build de produção TypeScript + Vite aprovado (versão 0.7.0).
 - Migração até `20261020_0007`, criando `operation_logs` sem alterar dados existentes.
 
