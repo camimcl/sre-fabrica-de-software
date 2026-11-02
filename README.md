@@ -145,6 +145,22 @@ O terceiro módulo funcional reúne histórico, relatórios por execução e com
 
 O treinamento também passou a calibrar o limiar no conjunto de validação com prioridade para a meta de recall `0,80`; candidatos abaixo da meta não podem ser aprovados. O resultado histórico de recall `0,70370` continua documentado, sem ser reescrito. O [cronograma revisado](docs/cronograma-sprints.md), o [Relatório Técnico da Sprint 06](docs/relatorio-sprint-06.md) e o [índice de evidências](docs/evidences/sprint-06/README.md) registram o método, as limitações e a rastreabilidade.
 
+## Sprint 08
+
+A versão 0.8.0 consolida os módulos, completa edição/exclusão de cenários e
+exportação de comparações na interface, revisa a matriz de permissões e registra
+mudanças de contas e cenários na auditoria. A confirmação de autorização para
+criar uma execução é obrigatória; a preservação do último QA foi protegida contra
+alterações simultâneas. Consultas usam datas locais, incluem limpeza de filtros e
+descartam respostas antigas ao navegar. O Vite foi atualizado para 7.3.7.
+
+Consulte o [Relatório Técnico da Sprint 08](docs/relatorio-sprint-08.md), o
+[cronograma atualizado](docs/cronograma-sprints.md) e as
+[evidências](docs/evidences/sprint-08/README.md). O ambiente é compartilhado:
+Visualizadores consultam resultados e alteram apenas a própria conta; QA administra
+usuários e modelos, mas só modifica projetos que possui. O backend local exige
+Python 3.11/3.12; os testes do frontend usam Node 22.18+ ou 24 (`npm test`).
+
 ## Como executar localmente com Docker
 
 1. Copie `.env.example` para `.env`.
