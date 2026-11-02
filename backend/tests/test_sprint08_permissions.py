@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from test_api import api, _qa, _token  # noqa: F401 - shared isolated API fixture
 from app.modules.audit.models import OperationLog
+from app.db.types import AuditAction
 from app.modules.load_tests import api as load_api
 from app.modules.load_tests.models import TestExecution
 
@@ -87,7 +88,7 @@ def test_role_changes_apply_to_existing_sessions_and_are_audited(resources):
     assert client.put(f"/users/{r['viewer_id']}", headers=r['viewer_headers'],
                       json={**payload, 'role': 'QA'}).status_code == 403
     with r['factory']() as db:
-        logs = list(db.scalars(select(OperationLog).where(OperationLog.entity_type == 'user')))
+        logs = list(db.scalars(select(OperationLog).where(OperationLog.entity_type == 'user', OperationLog.action == AuditAction.UPDATE)))
         assert len(logs) == 2
         assert json.loads(logs[-1].summary)['changed']['role']['after'] == 'VIEWER'
         assert all('password_hash' not in entry.summary and 'access_token' not in entry.summary

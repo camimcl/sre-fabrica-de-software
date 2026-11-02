@@ -57,7 +57,7 @@ def qa_user(user: User = Depends(current_user)) -> User:
     return user
 
 
-def _create_user(db: Session, request: RegisterRequest, role: UserRole) -> User:
+def _create_user(db: Session, request: RegisterRequest, role: UserRole, actor_id: UUID | None = None) -> User:
     user = User(
         full_name=request.full_name,
         email=str(request.email).lower(),
@@ -66,6 +66,12 @@ def _create_user(db: Session, request: RegisterRequest, role: UserRole) -> User:
     )
     db.add(user)
     try:
+        db.flush()
+        record_operation(
+            db, actor_id=actor_id or user.id, action=AuditAction.CREATE,
+            entity_type="user", entity_id=user.id,
+            after={"full_name": user.full_name, "email": user.email, "role": role.value},
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -173,10 +179,10 @@ def list_users(
 @router.post("/users", response_model=UserResponse, status_code=201)
 def create_user(
     request: UserCreateRequest,
-    _: User = Depends(qa_user),
+    actor: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> User:
-    return _create_user(db, request, request.role)
+    return _create_user(db, request, request.role, actor.id)
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
@@ -226,6 +232,11 @@ def delete_user(
     target = _user_or_404(db, user_id)
     _can_manage_user(actor, target)
     _ensure_qa_remains(db, target)
+    record_operation(
+        db, actor_id=actor.id, action=AuditAction.DELETE,
+        entity_type="user", entity_id=target.id,
+        before={"full_name": target.full_name, "role": target.role.value},
+    )
     db.delete(target)
     try:
         db.commit()
