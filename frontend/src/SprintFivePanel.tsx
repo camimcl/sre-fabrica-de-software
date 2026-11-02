@@ -14,6 +14,7 @@ type Scenario = {
   duration_seconds: number
   initial_concurrency: number
   max_concurrency: number
+  timeout_ms: number
   ramp_up_per_window: number
   strategy: 'FIXED' | 'RULES' | 'AI_HYBRID'
   p95_limit_ms: number
@@ -128,6 +129,7 @@ export default function SprintFivePanel({
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [models, setModels] = useState<ModelVersion[]>([])
   const [form, setForm] = useState<ScenarioForm>(emptyForm)
+  const [editingScenario, setEditingScenario] = useState<string | null>(null)
   const [busy, setBusy] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
   const executionRequest = useRef(0)
@@ -244,19 +246,43 @@ export default function SprintFivePanel({
     setBusy('scenario')
     try {
       const saved = await api<Scenario>(
-        `/projects/${projectId}/scenarios`,
-        'POST',
+        `/projects/${projectId}/scenarios${editingScenario ? `/${editingScenario}` : ''}`,
+        editingScenario ? 'PUT' : 'POST',
         form,
         token,
       )
       await refreshScenarios()
       setScenarioId(saved.id)
+      setEditingScenario(null)
+      setForm({ ...emptyForm, endpoint_id: authorizedEndpointId })
       report('Cenário persistido e pronto para execução.')
     } catch (error) {
       report(error)
     } finally {
       setBusy('')
     }
+  }
+
+  function editScenario() {
+    const scenario = scenarios.find((row) => row.id === scenarioId)
+    if (!scenario) return
+    const { name, endpoint_id, duration_seconds, initial_concurrency, max_concurrency,
+      ramp_up_per_window, timeout_ms, strategy, p95_limit_ms, error_rate_limit } = scenario
+    setForm({ name, endpoint_id, duration_seconds, initial_concurrency, max_concurrency,
+      ramp_up_per_window, timeout_ms, strategy, p95_limit_ms, error_rate_limit })
+    setEditingScenario(scenario.id)
+  }
+
+  async function deleteScenario() {
+    if (!scenarioId || busy || !window.confirm('Excluir este cenário? Cenários com execuções preservadas não podem ser excluídos.')) return
+    setBusy('scenario')
+    try {
+      await api(`/projects/${projectId}/scenarios/${scenarioId}`, 'DELETE', undefined, token)
+      setEditingScenario(null)
+      setForm({ ...emptyForm, endpoint_id: authorizedEndpointId })
+      await refreshScenarios()
+      report('Cenário excluído.')
+    } catch (error) { report(error) } finally { setBusy('') }
   }
 
   async function createAndStartExecution() {
@@ -335,7 +361,7 @@ export default function SprintFivePanel({
     <section className="card sprint-five-card">
       <div className="section-heading sprint-heading">
         <div>
-          <span className="eyebrow">Sprint 05 · segundo módulo</span>
+          <span className="eyebrow">Execução e inteligência local</span>
           <h2>Inteligência e controle adaptativo</h2>
           <p className="muted">Fluxo real: cenário → execução → métricas → risco → decisão → nova concorrência.</p>
         </div>
@@ -361,8 +387,11 @@ export default function SprintFivePanel({
               {scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name} · {scenario.strategy}</option>)}
             </select>
           ) : <p className="empty compact">Nenhum cenário persistido neste projeto.</p>}
+          {canEdit && scenarioId && <div className="actions"><button disabled={!!busy} onClick={editScenario}>Editar cenário</button><button className="danger" disabled={!!busy} onClick={() => void deleteScenario()}>Excluir cenário</button></div>}
           {canEdit && (
             <form className="stack compact-form" onSubmit={createScenario}>
+              <h3>{editingScenario ? 'Editar cenário' : 'Novo cenário'}</h3>
+              {editingScenario && <p className="helper">A edição vale para novas execuções. Os snapshots e resultados anteriores são preservados.</p>}
               <label>Nome<input required maxLength={120} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
               <label>Endpoint autorizado<select required value={form.endpoint_id} onChange={(event) => setForm({ ...form, endpoint_id: event.target.value })}><option value="">Selecione</option>{endpoints.filter((endpoint) => endpoint.authorization_confirmed).map((endpoint) => <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>)}</select></label>
               <div className="form-row triple">
@@ -376,7 +405,10 @@ export default function SprintFivePanel({
                 <label>Erro limite<input type="number" min={0} max={1} step="0.01" value={form.error_rate_limit} onChange={(event) => setForm({ ...form, error_rate_limit: event.target.value })} /></label>
               </div>
               <label>Estratégia<select value={form.strategy} onChange={(event) => setForm({ ...form, strategy: event.target.value as Scenario['strategy'] })}><option value="AI_HYBRID">IA híbrida</option><option value="RULES">Regras</option><option value="FIXED">Fixa</option></select></label>
-              <button className="primary" disabled={!form.endpoint_id || busy === 'scenario'} type="submit">Salvar cenário</button>
+              <label>Timeout por requisição (ms)<input required type="number" min={1} max={60000} value={form.timeout_ms} onChange={(event) => setForm({ ...form, timeout_ms: Number(event.target.value) })} /></label>
+              <button className="primary" disabled={!form.endpoint_id || !!busy || form.initial_concurrency > form.max_concurrency} type="submit">Salvar cenário</button>
+              {form.initial_concurrency > form.max_concurrency && <p role="alert">A concorrência inicial deve ser menor ou igual à máxima.</p>}
+              {editingScenario && <button type="button" disabled={!!busy} onClick={() => { setEditingScenario(null); setForm({ ...emptyForm, endpoint_id: authorizedEndpointId }) }}>Cancelar edição</button>}
             </form>
           )}
         </div>
