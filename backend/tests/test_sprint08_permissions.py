@@ -112,3 +112,14 @@ def test_scenario_edit_preserves_execution_snapshot_and_records_history(resource
     with r['factory']() as db:
         logs = list(db.scalars(select(OperationLog).where(OperationLog.entity_type == 'scenario')))
         assert {entry.action.value for entry in logs} == {'CREATE', 'UPDATE', 'DELETE'}
+
+
+@pytest.mark.parametrize('payload', [{}, {'authorization_acknowledged': False},
+                                    {'authorization_acknowledged': 'true'},
+                                    {'authorization_acknowledged': 1}])
+def test_execution_requires_explicit_boolean_authorization(resources, payload):
+    r = resources
+    before = r['client'].get(f"{r['base']}/executions", headers=r['owner_headers']).json()
+    response = r['client'].post(f"{r['base']}/executions", headers=r['owner_headers'], json=payload)
+    assert response.status_code == 422, response.text
+    assert r['client'].get(f"{r['base']}/executions", headers=r['owner_headers']).json() == before

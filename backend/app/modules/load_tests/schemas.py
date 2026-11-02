@@ -62,7 +62,7 @@ class ScenarioResponse(BaseModel):
 class ExecutionCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    authorization_acknowledged: bool = False
+    authorization_acknowledged: bool = Field(strict=True)
 
     @field_validator("authorization_acknowledged")
     @classmethod
