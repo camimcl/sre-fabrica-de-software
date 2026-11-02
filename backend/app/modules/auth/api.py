@@ -19,6 +19,8 @@ from app.core.security import (
 )
 from app.db.session import get_db
 from app.db.types import UserRole
+from app.db.types import AuditAction
+from app.modules.audit.service import record_operation
 from app.modules.auth.models import User
 from app.modules.auth.schemas import (
     LoginRequest,
@@ -188,6 +190,7 @@ def update_user(
     _ensure_qa_remains(db, target, request.role)
     _ensure_no_orphan_projects(db, target, request.role)
 
+    before = {"full_name": target.full_name, "email": target.email, "role": target.role.value}
     target.full_name = request.full_name
     target.email = str(request.email).lower()
     # NOTE: role demotion is guarded by _ensure_no_orphan_projects above.
@@ -196,6 +199,12 @@ def update_user(
     target.role = request.role
     if request.password:
         target.password_hash = hash_password(request.password)
+    record_operation(
+        db, actor_id=actor.id, action=AuditAction.UPDATE,
+        entity_type="user", entity_id=target.id, before=before,
+        after={"full_name": target.full_name, "email": target.email,
+               "role": target.role.value, "password_changed": bool(request.password)},
+    )
     try:
         db.commit()
     except IntegrityError as exc:
