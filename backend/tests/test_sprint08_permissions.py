@@ -124,3 +124,21 @@ def test_execution_requires_explicit_boolean_authorization(resources, payload):
     response = r['client'].post(f"{r['base']}/executions", headers=r['owner_headers'], json=payload)
     assert response.status_code == 422, response.text
     assert r['client'].get(f"{r['base']}/executions", headers=r['owner_headers']).json() == before
+
+
+def test_account_audit_is_atomic_and_excludes_passwords(resources):
+    r = resources; client = r['client']; headers = r['owner_headers']
+    payload = {'full_name': 'New Viewer', 'email': 'new-viewer@example.org',
+               'password': 'new-viewer-password-123', 'role': 'VIEWER'}
+    created = client.post('/users', headers=headers, json=payload)
+    assert created.status_code == 201, created.text
+    target = created.json()['id']
+    count = client.get('/audit/logs?entity_type=user', headers=headers).json()['total']
+    assert client.post('/users', headers=headers, json=payload).status_code == 409
+    assert client.get('/audit/logs?entity_type=user', headers=headers).json()['total'] == count
+    assert client.delete(f'/users/{target}', headers=headers).status_code == 204
+    logs = client.get('/audit/logs?entity_type=user', headers=headers).json()['items']
+    lifecycle = [entry for entry in logs if entry['entity_id'] == target]
+    assert {entry['action'] for entry in lifecycle} == {'CREATE', 'DELETE'}
+    assert all(entry['actor_id'] == str(r['owner'].id) for entry in lifecycle)
+    assert all(payload['password'] not in (entry['summary'] or '') for entry in lifecycle)
