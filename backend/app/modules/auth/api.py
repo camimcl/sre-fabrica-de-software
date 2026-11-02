@@ -94,10 +94,13 @@ def _ensure_qa_remains(
     )
     if not removes_qa:
         return
-    qa_count = db.scalar(
-        select(func.count()).select_from(User).where(User.role == UserRole.QA)
-    )
-    if qa_count is not None and qa_count <= 1:
+    # Serialize competing removals/demotions in PostgreSQL. Counting without
+    # locking lets two QAs each observe the other and remove the last two.
+    remaining = list(db.scalars(
+        select(User).where(User.role == UserRole.QA)
+        .order_by(User.id).with_for_update()
+    ))
+    if len(remaining) <= 1:
         raise HTTPException(
             status_code=409, detail="The last QA account cannot be removed"
         )
