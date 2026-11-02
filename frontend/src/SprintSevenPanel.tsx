@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api } from './api'
+import { download } from './download'
 
 type Strategy = 'FIXED' | 'RULES' | 'AI_HYBRID'
 type Status = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED' | 'FAILED'
@@ -42,20 +43,6 @@ type Props = { token: string; projectId: string; isQa: boolean; report: (message
 const strategyLabel: Record<Strategy, string> = { FIXED: 'Fixa', RULES: 'Regras', AI_HYBRID: 'IA híbrida' }
 const statuses: Status[] = ['PENDING', 'RUNNING', 'COMPLETED', 'CANCELLED', 'FAILED']
 const strategies: Strategy[] = ['FIXED', 'RULES', 'AI_HYBRID']
-
-async function download(path: string, token: string, filename: string) {
-  const response = await fetch(`/api${path}`, { headers: { Authorization: `Bearer ${token}` } })
-  if (!response.ok) throw new Error(`Falha na exportação (${response.status})`)
-  const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
-}
 
 function BarChart({ data }: { data: { label: string; value: number }[] }) {
   const max = Math.max(1, ...data.map((d) => d.value))
@@ -204,7 +191,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
             {execPage?.items.map((row) => (
               <article key={row.id} className="history-item">
                 <span><strong>{row.strategy}</strong><small>{row.status} · {row.id.slice(0, 8)} · {new Date(row.created_at).toLocaleString('pt-BR')}</small></span>
-                <button onClick={() => download(`/projects/${projectId}/scenarios/${row.scenario_id}/executions/${row.id}/report.pdf`, token, `execution-${row.id.slice(0, 8)}.pdf`).catch(report)}>PDF</button>
+                <button disabled={row.status === 'PENDING' || row.status === 'RUNNING'} title="O PDF exige um relatório gerado na área Relatórios." onClick={() => download(`/projects/${projectId}/scenarios/${row.scenario_id}/executions/${row.id}/report.pdf`, token, `execution-${row.id.slice(0, 8)}.pdf`).catch(report)}>PDF</button>
               </article>
             ))}
             {execPage && execPage.items.length === 0 && <p className="empty compact">Nenhuma execução para os filtros aplicados.</p>}

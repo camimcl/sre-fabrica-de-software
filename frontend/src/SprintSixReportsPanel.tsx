@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api'
+import { download } from './download'
 
 type Strategy = 'FIXED' | 'RULES' | 'AI_HYBRID'
 type ExecutionReport = {
@@ -86,7 +87,7 @@ export default function SprintSixReportsPanel({ token, projectId, canEdit, repor
   const [comparisons, setComparisons] = useState<Comparison[]>([])
   const [selectedComparisonId, setSelectedComparisonId] = useState('')
   const [selectedExecutions, setSelectedExecutions] = useState<string[]>([])
-  const [comparisonName, setComparisonName] = useState('Comparação controlada Sprint 06')
+  const [comparisonName, setComparisonName] = useState('Comparação controlada')
   const [strategyFilter, setStrategyFilter] = useState<'ALL' | Strategy>('ALL')
   const [busy, setBusy] = useState('')
   const refreshRequest = useRef(0)
@@ -183,7 +184,7 @@ export default function SprintSixReportsPanel({ token, projectId, canEdit, repor
     <section className="card reports-card">
       <div className="section-heading sprint-heading">
         <div>
-          <span className="eyebrow">Sprint 06 · terceiro módulo</span>
+          <span className="eyebrow">Relatórios e comparação experimental</span>
           <h2>Histórico e avaliação experimental</h2>
           <p className="muted">Compare estratégias somente com condições equivalentes e ao menos três repetições por estratégia.</p>
         </div>
@@ -221,6 +222,10 @@ export default function SprintSixReportsPanel({ token, projectId, canEdit, repor
       <div className="comparison-block">
         <div className="subsection-heading"><h3>Resultados comparativos</h3>{comparisons.length > 0 && <select aria-label="Comparação selecionada" value={selectedComparisonId} onChange={(event) => setSelectedComparisonId(event.target.value)}>{comparisons.map((comparison) => <option key={comparison.id} value={comparison.id}>{comparison.name}</option>)}</select>}</div>
         {selectedComparison ? <>
+          <div className="actions">
+            <button onClick={() => download(`/projects/${projectId}/reports/comparisons/${selectedComparison.id}.csv`, token, `comparacao-${selectedComparison.id.slice(0, 8)}.csv`).catch(report)}>Exportar comparação CSV</button>
+            <button onClick={() => download(`/projects/${projectId}/reports/comparisons/${selectedComparison.id}.pdf`, token, `comparacao-${selectedComparison.id.slice(0, 8)}.pdf`).catch(report)}>Exportar comparação PDF</button>
+          </div>
           <div className="comparison-meta"><span>{selectedComparison.repetitions_per_strategy} repetições por estratégia</span><span>Condições #{selectedComparison.conditions_fingerprint.slice(0, 10)}</span><span>{new Date(selectedComparison.generated_at).toLocaleString('pt-BR')}</span></div>
           <div className="strategy-results">{strategies.map((strategy) => { const result = selectedComparison.results[strategy]; return <article key={strategy}><span>{strategyLabel[strategy]}</span><strong>{result.throughput_rps.mean.toFixed(1)} rps</strong><small>Desvio-padrão: {result.throughput_rps.standard_deviation.toFixed(1)} rps</small><small>Média dos P95 das janelas: {result.latency_p95_ms.mean.toFixed(0)} ± {result.latency_p95_ms.standard_deviation.toFixed(0)} ms</small><small>Erro {(result.error_rate.mean * 100).toFixed(2)}% · conformidade {(result.compliance_rate.mean * 100).toFixed(1)}%</small></article> })}</div>
           <p className="muted">P95 acima não é o percentil global. Throughput considera o tempo observado das janelas; a dispersão é o desvio-padrão populacional entre repetições.</p>
