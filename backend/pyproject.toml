@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loadforge-backend"
-version = "0.7.0"
+version = "0.8.0"
 description = "API do LoadForge com consulta, analise, auditoria e exportacao"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
   "alembic>=1.14,<2",
   "email-validator>=2.2,<3",

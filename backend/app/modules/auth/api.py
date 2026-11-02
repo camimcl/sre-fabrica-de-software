@@ -19,6 +19,8 @@ from app.core.security import (
 )
 from app.db.session import get_db
 from app.db.types import UserRole
+from app.db.types import AuditAction
+from app.modules.audit.service import record_operation
 from app.modules.auth.models import User
 from app.modules.auth.schemas import (
     LoginRequest,
@@ -55,7 +57,7 @@ def qa_user(user: User = Depends(current_user)) -> User:
     return user
 
 
-def _create_user(db: Session, request: RegisterRequest, role: UserRole) -> User:
+def _create_user(db: Session, request: RegisterRequest, role: UserRole, actor_id: UUID | None = None) -> User:
     user = User(
         full_name=request.full_name,
         email=str(request.email).lower(),
@@ -64,6 +66,12 @@ def _create_user(db: Session, request: RegisterRequest, role: UserRole) -> User:
     )
     db.add(user)
     try:
+        db.flush()
+        record_operation(
+            db, actor_id=actor_id or user.id, action=AuditAction.CREATE,
+            entity_type="user", entity_id=user.id,
+            after={"full_name": user.full_name, "email": user.email, "role": role.value},
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -92,10 +100,13 @@ def _ensure_qa_remains(
     )
     if not removes_qa:
         return
-    qa_count = db.scalar(
-        select(func.count()).select_from(User).where(User.role == UserRole.QA)
-    )
-    if qa_count is not None and qa_count <= 1:
+    # Serialize competing removals/demotions in PostgreSQL. Counting without
+    # locking lets two QAs each observe the other and remove the last two.
+    remaining = list(db.scalars(
+        select(User).where(User.role == UserRole.QA)
+        .order_by(User.id).with_for_update()
+    ))
+    if len(remaining) <= 1:
         raise HTTPException(
             status_code=409, detail="The last QA account cannot be removed"
         )
@@ -168,10 +179,10 @@ def list_users(
 @router.post("/users", response_model=UserResponse, status_code=201)
 def create_user(
     request: UserCreateRequest,
-    _: User = Depends(qa_user),
+    actor: User = Depends(qa_user),
     db: Session = Depends(get_db),
 ) -> User:
-    return _create_user(db, request, request.role)
+    return _create_user(db, request, request.role, actor.id)
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
@@ -188,6 +199,7 @@ def update_user(
     _ensure_qa_remains(db, target, request.role)
     _ensure_no_orphan_projects(db, target, request.role)
 
+    before = {"full_name": target.full_name, "email": target.email, "role": target.role.value}
     target.full_name = request.full_name
     target.email = str(request.email).lower()
     # NOTE: role demotion is guarded by _ensure_no_orphan_projects above.
@@ -196,6 +208,12 @@ def update_user(
     target.role = request.role
     if request.password:
         target.password_hash = hash_password(request.password)
+    record_operation(
+        db, actor_id=actor.id, action=AuditAction.UPDATE,
+        entity_type="user", entity_id=target.id, before=before,
+        after={"full_name": target.full_name, "email": target.email,
+               "role": target.role.value, "password_changed": bool(request.password)},
+    )
     try:
         db.commit()
     except IntegrityError as exc:
@@ -214,6 +232,11 @@ def delete_user(
     target = _user_or_404(db, user_id)
     _can_manage_user(actor, target)
     _ensure_qa_remains(db, target)
+    record_operation(
+        db, actor_id=actor.id, action=AuditAction.DELETE,
+        entity_type="user", entity_id=target.id,
+        before={"full_name": target.full_name, "role": target.role.value},
+    )
     db.delete(target)
     try:
         db.commit()

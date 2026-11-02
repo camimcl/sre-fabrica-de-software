@@ -1,0 +1,34 @@
+{
+  "date": "2026-11-02",
+  "branch": "sprint-08-consolidacao-permissoes-usabilidade",
+  "base_revision": "597677fe9612402557ca292e0557f824303fad42",
+  "tested_code_revision": "98a799a",
+  "product_version": "0.8.0",
+  "backend": {
+    "python": "3.12.14",
+    "dependencies": "uv.lock (locked, extra dev, isolated environment)",
+    "database": "PostgreSQL 16, disposable database ending in _test",
+    "passed": 125,
+    "failures": 0,
+    "skipped": 0,
+    "warnings": 8,
+    "numpy": "1.26.4",
+    "scipy": "1.13.1",
+    "scikit_learn": "1.5.2"
+  },
+  "frontend": {
+    "passed": 4,
+    "failures": 0,
+    "build": "success",
+    "vite": "7.3.7",
+    "npm_reported_vulnerabilities": 0
+  },
+  "docker_images": {
+    "loadforge-api:sprint08-local": "sha256:945c23767a5962f8db1e0a19a7b8e98ae7626d8a52d735036be3a04dff6b8cc5",
+    "loadforge-frontend:sprint08-local": "sha256:a2386a281b5dd89c8d6c68cfe6f644b31ff7a050cefd35a237807b7ccd62120e"
+  },
+  "interactive_browser_session": false,
+  "remote_ci_triggered": false,
+  "pushed": false,
+  "pull_request_created": false
+}

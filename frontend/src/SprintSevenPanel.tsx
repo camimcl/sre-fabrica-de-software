@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api } from './api'
+import { download } from './download'
+import { periodQuery, readableSummary } from './query'
 
 type Strategy = 'FIXED' | 'RULES' | 'AI_HYBRID'
 type Status = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED' | 'FAILED'
@@ -27,7 +29,7 @@ type ExecutionPage = { items: ExecutionRow[]; total: number; page: number; page_
 
 type OperationLog = {
   id: string
-  actor_id: string
+  actor_id: string | null
   action: 'CREATE' | 'UPDATE' | 'DELETE' | 'EXECUTE'
   entity_type: string
   entity_id: string | null
@@ -42,20 +44,6 @@ type Props = { token: string; projectId: string; isQa: boolean; report: (message
 const strategyLabel: Record<Strategy, string> = { FIXED: 'Fixa', RULES: 'Regras', AI_HYBRID: 'IA híbrida' }
 const statuses: Status[] = ['PENDING', 'RUNNING', 'COMPLETED', 'CANCELLED', 'FAILED']
 const strategies: Strategy[] = ['FIXED', 'RULES', 'AI_HYBRID']
-
-async function download(path: string, token: string, filename: string) {
-  const response = await fetch(`/api${path}`, { headers: { Authorization: `Bearer ${token}` } })
-  if (!response.ok) throw new Error(`Falha na exportação (${response.status})`)
-  const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
-}
 
 function BarChart({ data }: { data: { label: string; value: number }[] }) {
   const max = Math.max(1, ...data.map((d) => d.value))
@@ -77,11 +65,14 @@ function Sparkline({ points }: { points: { day: string; count: number }[] }) {
   const max = Math.max(1, ...points.map((p) => p.count))
   const width = 320
   const height = 80
-  const step = points.length > 1 ? width / (points.length - 1) : 0
-  const coords = points.map((p, i) => `${i * step},${height - (p.count / max) * height}`).join(' ')
+  const step = points.length > 1 ? (width - 16) / (points.length - 1) : 0
+  const x = (i: number) => points.length === 1 ? width / 2 : 8 + i * step
+  const y = (count: number) => height - 8 - (count / max) * (height - 16)
+  const coords = points.map((p, i) => `${x(i)},${y(p.count)}`).join(' ')
   return (
     <svg className="s7-spark" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Execuções por dia">
       <polyline fill="none" stroke="currentColor" strokeWidth="2" points={coords} />
+      {points.map((p, i) => <circle key={p.day} cx={x(i)} cy={y(p.count)} r="3" fill="currentColor"><title>{p.day}: {p.count} execuções</title></circle>)}
     </svg>
   )
 }
@@ -104,12 +95,10 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const requestRef = useRef(0)
+  const validRange = !dateFrom || !dateTo || dateFrom <= dateTo
 
   const queryString = useCallback((extra: Record<string, string>) => {
-    const params = new URLSearchParams(extra)
-    if (dateFrom) params.set('date_from', `${dateFrom}T00:00:00`)
-    if (dateTo) params.set('date_to', `${dateTo}T23:59:59`)
-    return params.toString()
+    return periodQuery(dateFrom, dateTo, extra)
   }, [dateFrom, dateTo])
 
   const loadDashboard = useCallback(async () => {
@@ -119,7 +108,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
       const qs = queryString({})
       const data = await api<Dashboard>(`/projects/${projectId}/dashboard${qs ? `?${qs}` : ''}`, 'GET', undefined, token)
       if (request === requestRef.current) setDashboard(data)
-    } catch (error) { report(error) } finally { if (request === requestRef.current) setLoading(false) }
+    } catch (error) { if (request === requestRef.current) report(error) } finally { if (request === requestRef.current) setLoading(false) }
   }, [projectId, token, queryString, report])
 
   const loadExecutions = useCallback(async () => {
@@ -131,7 +120,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
       if (strategyFilter) extra.strategy = strategyFilter
       const data = await api<ExecutionPage>(`/projects/${projectId}/executions?${queryString(extra)}`, 'GET', undefined, token)
       if (request === requestRef.current) setExecPage(data)
-    } catch (error) { report(error) }
+    } catch (error) { if (request === requestRef.current) report(error) }
   }, [projectId, token, queryString, page, search, statusFilter, strategyFilter, report])
 
   const loadLogs = useCallback(async () => {
@@ -140,12 +129,25 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
     try {
       const data = await api<OperationLogPage>(`/audit/logs?${queryString({ page: String(logPage), page_size: '10' })}`, 'GET', undefined, token)
       if (request === requestRef.current) setLogs(data)
-    } catch (error) { report(error) }
+    } catch (error) { if (request === requestRef.current) report(error) }
   }, [token, logPage, isQa, queryString, report])
 
-  useEffect(() => { if (tab === 'dashboard') void loadDashboard() }, [tab, loadDashboard])
-  useEffect(() => { if (tab === 'queries') void loadExecutions() }, [tab, loadExecutions])
-  useEffect(() => { if (tab === 'operations') void loadLogs() }, [tab, loadLogs])
+  useEffect(() => {
+    setDashboard(null)
+    setExecPage(null)
+    setLogs(null)
+    if (validRange) {
+      if (tab === 'dashboard') void loadDashboard()
+      if (tab === 'queries') void loadExecutions()
+      if (tab === 'operations') void loadLogs()
+    }
+    return () => { requestRef.current += 1 }
+  }, [tab, validRange, loadDashboard, loadExecutions, loadLogs])
+
+  function resetFilters() {
+    setDateFrom(''); setDateTo(''); setSearch(''); setStatusFilter(''); setStrategyFilter('')
+    setPage(1); setLogPage(1)
+  }
 
   const totalPages = execPage ? Math.max(1, Math.ceil(execPage.total / execPage.page_size)) : 1
   const logTotalPages = logs ? Math.max(1, Math.ceil(logs.total / logs.page_size)) : 1
@@ -154,16 +156,16 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
     <section className="card reports-card s7-panel">
       <div className="section-heading sprint-heading">
         <div>
-          <span className="eyebrow">Sprint 07 · consulta e acompanhamento</span>
+          <span className="eyebrow">Consulta e acompanhamento</span>
           <h2>Dashboard, consultas e auditoria</h2>
           <p className="muted">Indicadores reais, pesquisa com filtros, exportação e histórico de operações.</p>
         </div>
       </div>
 
-      <div className="filter-row" role="tablist" aria-label="Seções da Sprint 07">
-        <button role="tab" aria-selected={tab === 'dashboard'} className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}>Dashboard</button>
-        <button role="tab" aria-selected={tab === 'queries'} className={tab === 'queries' ? 'active' : ''} onClick={() => setTab('queries')}>Consultas</button>
-        {isQa && <button role="tab" aria-selected={tab === 'operations'} className={tab === 'operations' ? 'active' : ''} onClick={() => setTab('operations')}>Operações</button>}
+      <div className="filter-row" role="group" aria-label="Seções de acompanhamento">
+        <button aria-pressed={tab === 'dashboard'} className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}>Dashboard</button>
+        <button aria-pressed={tab === 'queries'} className={tab === 'queries' ? 'active' : ''} onClick={() => setTab('queries')}>Consultas</button>
+        {isQa && <button aria-pressed={tab === 'operations'} className={tab === 'operations' ? 'active' : ''} onClick={() => setTab('operations')}>Operações</button>}
       </div>
 
       <div className="s7-period">
@@ -171,6 +173,9 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
         <label>Até<input type="date" value={dateTo} onChange={(e) => { setPage(1); setLogPage(1); setDateTo(e.target.value) }} /></label>
       </div>
 
+      <button onClick={resetFilters}>Limpar filtros</button>
+      {!validRange && <p role="alert">A data inicial deve ser menor ou igual à data final.</p>}
+      <p className="helper">As datas consideram o seu horário local. Cenários, endpoints e comparações exibem o total cadastrado no projeto; os indicadores de execução seguem o período.</p>
       {tab === 'dashboard' && (loading && !dashboard ? <p className="empty compact">Carregando indicadores…</p> : dashboard && (
         <div className="s7-dashboard">
           <div className="s7-kpis">
@@ -186,7 +191,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
           <div className="s7-charts">
             <div><h3>Execuções por status</h3><BarChart data={statuses.map((s) => ({ label: s, value: dashboard.executions_by_status[s] ?? 0 }))} /></div>
             <div><h3>Execuções por estratégia</h3><BarChart data={strategies.map((s) => ({ label: strategyLabel[s], value: dashboard.executions_by_strategy[s] ?? 0 }))} /></div>
-            <div className="s7-timeseries"><h3>Execuções por dia</h3><Sparkline points={dashboard.timeseries_executions_per_day} /></div>
+            <div className="s7-timeseries"><h3>Execuções por dia (UTC)</h3><Sparkline points={dashboard.timeseries_executions_per_day} /><ul className="helper">{dashboard.timeseries_executions_per_day.map((p) => <li key={p.day}>{p.day}: {p.count} execuções</li>)}</ul></div>
           </div>
         </div>
       ))}
@@ -197,14 +202,14 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
             <input placeholder="Buscar por cenário" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value) }} />
             <select value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value as Status | '') }}><option value="">Status (todos)</option>{statuses.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             <select value={strategyFilter} onChange={(e) => { setPage(1); setStrategyFilter(e.target.value as Strategy | '') }}><option value="">Estratégia (todas)</option>{strategies.map((s) => <option key={s} value={s}>{strategyLabel[s]}</option>)}</select>
-            <button onClick={() => void loadExecutions()}>Aplicar</button>
-            <button onClick={() => download(`/projects/${projectId}/exports/executions.csv?${queryString({ ...(search.trim() ? { search: search.trim() } : {}), ...(statusFilter ? { status: statusFilter } : {}), ...(strategyFilter ? { strategy: strategyFilter } : {}) })}`, token, 'executions.csv').catch(report)}>Exportar CSV</button>
+            <button disabled={!validRange} onClick={() => void loadExecutions()}>Atualizar consulta</button>
+            <button disabled={!validRange} onClick={() => download(`/projects/${projectId}/exports/executions.csv?${queryString({ ...(search.trim() ? { search: search.trim() } : {}), ...(statusFilter ? { status: statusFilter } : {}), ...(strategyFilter ? { strategy: strategyFilter } : {}) })}`, token, 'executions.csv').catch(report)}>Exportar CSV</button>
           </div>
           <div className="history-list">
             {execPage?.items.map((row) => (
               <article key={row.id} className="history-item">
                 <span><strong>{row.strategy}</strong><small>{row.status} · {row.id.slice(0, 8)} · {new Date(row.created_at).toLocaleString('pt-BR')}</small></span>
-                <button onClick={() => download(`/projects/${projectId}/scenarios/${row.scenario_id}/executions/${row.id}/report.pdf`, token, `execution-${row.id.slice(0, 8)}.pdf`).catch(report)}>PDF</button>
+                <button disabled={row.status === 'PENDING' || row.status === 'RUNNING'} title="O PDF exige um relatório gerado na área Relatórios." onClick={() => download(`/projects/${projectId}/scenarios/${row.scenario_id}/executions/${row.id}/report.pdf`, token, `execution-${row.id.slice(0, 8)}.pdf`).catch(report)}>PDF</button>
               </article>
             ))}
             {execPage && execPage.items.length === 0 && <p className="empty compact">Nenhuma execução para os filtros aplicados.</p>}
@@ -219,6 +224,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
 
       {tab === 'operations' && isQa && (
         <div className="s7-operations">
+          <p className="helper">Histórico de todo o ambiente compartilhado, disponível apenas para QA. O projeto selecionado não limita esta lista.</p>
           <div className="history-list">
             {logs?.items.map((entry) => (
               <article key={entry.id} className="history-item s7-log">
@@ -226,7 +232,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
                   <strong>{entry.action} · {entry.entity_type}</strong>
                   <small>{new Date(entry.created_at).toLocaleString('pt-BR')} · {entry.entity_id?.slice(0, 8) ?? '—'}</small>
                 </button>
-                {expanded === entry.id && entry.summary && <pre className="s7-log-summary">{JSON.stringify(JSON.parse(entry.summary), null, 2)}</pre>}
+                {expanded === entry.id && <pre className="s7-log-summary">{readableSummary(entry.summary)}</pre>}
               </article>
             ))}
             {logs && logs.items.length === 0 && <p className="empty compact">Nenhuma operação registrada.</p>}

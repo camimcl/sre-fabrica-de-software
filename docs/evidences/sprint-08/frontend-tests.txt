@@ -1,0 +1,16 @@
+
+> loadforge-frontend@0.8.0 test
+> node --experimental-strip-types --test tests/sprint08.test.mjs
+
+✔ local date filters preserve the whole day and the other criteria (2.2797ms)
+✔ legacy audit details do not crash the operations panel (0.1871ms)
+✔ downloads expose the missing report action and API errors (0.6411ms)
+✔ successful downloads use authentication and release temporary resources (0.9091ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 131.2018
