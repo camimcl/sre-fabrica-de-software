@@ -246,8 +246,14 @@ def update_scenario(
     require_owned_project(db, project_id, user)
     scenario = require_scenario(db, project_id, scenario_id)
     _authorized_endpoint(db, project_id, request.endpoint_id)
+    before = {key: getattr(scenario, key) for key in request.model_dump()}
     for key, value in request.model_dump().items():
         setattr(scenario, key, value)
+    record_operation(
+        db, actor_id=user.id, action=AuditAction.UPDATE,
+        entity_type="scenario", entity_id=scenario.id,
+        before=before, after=request.model_dump(),
+    )
     _commit(db, "Scenario could not be updated")
     db.refresh(scenario)
     return scenario
@@ -262,6 +268,11 @@ def delete_scenario(
 ) -> None:
     require_owned_project(db, project_id, user)
     scenario = require_scenario(db, project_id, scenario_id)
+    record_operation(
+        db, actor_id=user.id, action=AuditAction.DELETE,
+        entity_type="scenario", entity_id=scenario.id,
+        before={"name": scenario.name, "strategy": scenario.strategy.value},
+    )
     db.delete(scenario)
     _commit(db, "Remove dependent executions before deleting the scenario")
 
