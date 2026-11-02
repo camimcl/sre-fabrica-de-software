@@ -96,23 +96,28 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return
+    let active = true
     Promise.all([
       api<User>('/auth/me', 'GET', undefined, token),
       api<Project[]>('/projects', 'GET', undefined, token),
     ]).then(([currentUser, rows]) => {
+      if (!active) return
       setUser(currentUser)
       setProjects(rows)
       setSelectedId(rows[0]?.id ?? null)
       if (currentUser.role === 'QA') {
-        api<User[]>('/users', 'GET', undefined, token).then(setUsers).catch(report)
+        api<User[]>('/users', 'GET', undefined, token).then((items) => { if (active) setUsers(items) }).catch((error) => { if (active) report(error) })
       } else {
         setUsers([currentUser])
       }
     }).catch((error) => {
+      if (!active) return
       report(error)
       sessionStorage.removeItem('loadforge-token')
       setToken('')
+      setUser(null)
     })
+    return () => { active = false }
   }, [token])
 
   useEffect(() => {
@@ -120,7 +125,16 @@ export default function App() {
       setEndpoints([])
       return
     }
-    refreshEndpoints(selectedId, token).catch(report)
+    let active = true
+    setEndpoints([])
+    setEditingEndpoint(null)
+    setEndpointForm(blankEndpoint)
+    setEditingProject(null)
+    setProjectForm(blankProject)
+    api<Endpoint[]>(`/projects/${selectedId}/endpoints`, 'GET', undefined, token)
+      .then((rows) => { if (active) setEndpoints(rows) })
+      .catch((error) => { if (active) report(error) })
+    return () => { active = false }
   }, [selectedId, token])
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -153,6 +167,12 @@ export default function App() {
     setUsers([])
     setEditingUser(null)
     setUserForm(blankUser)
+    setSelectedId(null)
+    setEditingProject(null)
+    setProjectForm(blankProject)
+    setEditingEndpoint(null)
+    setEndpointForm(blankEndpoint)
+    setActiveView('projects')
     setNotice('Sessão encerrada neste navegador.')
   }
 
@@ -277,7 +297,7 @@ export default function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">LF</span><div><strong>LoadForge</strong><small>Ambiente local · Sprint 06</small></div></div>
+        <div className="brand"><span className="brand-mark">LF</span><div><strong>LoadForge</strong><small>Ambiente local · Sprint 08</small></div></div>
         {user && <nav className="main-nav" aria-label="Navegação principal">
           <button className={activeView === 'projects' ? 'active' : ''} onClick={() => setActiveView('projects')}>Projetos</button>
           <button className={activeView === 'tests' ? 'active' : ''} onClick={() => setActiveView('tests')}>Execuções</button>
@@ -306,6 +326,7 @@ export default function App() {
       ) : (
         <main className="workspace">
           <div className="page-heading"><div><span className="eyebrow">{viewCopy[activeView].eyebrow}</span><h1>{viewCopy[activeView].title}</h1><p>{viewCopy[activeView].description}</p></div><span className="role-pill">{user.role === 'QA' ? 'Acesso QA' : 'Somente leitura'}</span></div>
+          <p className="helper">{user.role === 'VIEWER' ? 'Seu perfil consulta projetos, métricas e relatórios e permite editar apenas a própria conta. Alterações e execução de carga exigem QA proprietário.' : selectedProject && !canEdit ? 'Este projeto pertence a outro QA. Você pode consultar os dados; alterações e execuções são exclusivas do proprietário.' : 'Você pode administrar usuários e modelos. As alterações de projetos, cenários e execuções exigem a propriedade do projeto.'}</p>
           {(activeView === 'tests' || activeView === 'reports' || activeView === 'dashboard') && <div className="project-context"><div><span>Projeto ativo</span><strong>{selectedProject?.name ?? 'Nenhum projeto'}</strong></div><select aria-label="Projeto ativo" value={selectedId ?? ''} onChange={(event) => setSelectedId(event.target.value)}><option value="">Selecione um projeto</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div>}
           {activeView === 'projects' && <div className="columns">
             <section className="card projects-card">
