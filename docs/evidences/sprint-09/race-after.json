@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-11-07T01:13:42.661Z",
+  "records": [
+    {
+      "id": "NAV-RACE-01",
+      "expected": "Projeto B conserva seu rascunho e nao mostra endpoint de A",
+      "obtained": "Projeto B conserva seu rascunho e nao mostra endpoint de A",
+      "status": "PASS"
+    }
+  ]
+}

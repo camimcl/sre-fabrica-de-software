@@ -1,6 +1,6 @@
 # Cronograma oficial revisado do LoadForge
 
-**Revisão:** 02/11/2026
+**Revisão:** 06/11/2026
 **Motivo:** registrar as entregas integradas das Sprints 06 e 07 e a consolidação funcional, de permissões e usabilidade da Sprint 08. A revisão de 15/10 antecipou formalmente a IA e o controlador, conforme descrito abaixo.
 
 ## Mudança de planejamento
@@ -20,7 +20,7 @@ Essa antecipação não elimina a etapa experimental. Ela desloca para a Sprint 
 | 05 | Segundo módulo antecipado: inteligência local e controle adaptativo | Concluída | Treino, aprovação, inferência, decisões, fallback e interface integrada |
 | 06 | Terceiro módulo: histórico, relatórios e avaliação experimental | Implementada e integrada | Relatórios por execução, comparação repetida entre `FIXED`, `RULES` e `AI_HYBRID`, dispersão e condições auditáveis; ganho experimental não presumido |
 | 07 | Dashboard, relatórios, pesquisas, filtros, exportação e auditoria | Implementada e integrada (PR 6) | Indicadores e consultas com dados persistidos, CSV/PDF e histórico de operações |
-| 08 | Consolidação funcional, permissões, usabilidade e regras de negócio | Implementação local para revisão | Gestão completa de cenários, exportações integradas, matriz de acesso testada, validação de autorização, proteção do último QA e evidências automatizadas |
+| 08 | Consolidação funcional, permissões, usabilidade e regras de negócio | Implementada e integrada (PR 7) | Gestão completa de cenários, exportações integradas, matriz de acesso testada, validação de autorização, proteção do último QA e evidências automatizadas |
 
 ## Critérios experimentais da Sprint 06
 
@@ -45,3 +45,7 @@ Consulte o [relatório da Sprint 08](relatorio-sprint-08.md) para a matriz de
 funcionalidades, permissões, testes e limites desta entrega.
 
 Este arquivo é a fonte formal do cronograma revisado. Os relatórios de cada sprint registram a execução real, e qualquer nova mudança de escopo deve atualizar este cronograma no mesmo commit da decisão.
+
+## Sprint 09 - prazo 07/11/2026
+
+Verificação registrada em 06/11: 167 testes backend, 11 frontend, 17 verificações integradas e dois retestes de concorrência de interface aprovados; quatro defeitos corrigidos, documentação atualizada e entrega incremental. Alterações organizadas localmente por tarefa. Consulte [relatório](relatorio-sprint-09.md) e [divisão](plano-sprint-09.md).
