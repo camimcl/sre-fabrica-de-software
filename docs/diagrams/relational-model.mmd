@@ -119,3 +119,14 @@ erDiagram
       control_strategy strategy
       INTEGER repetition_number
     }
+
+    users o|--o{ operation_logs : actor_id_SET_NULL
+    operation_logs {
+      UUID id PK
+      UUID actor_id FK
+      audit_action action
+      VARCHAR entity_type
+      UUID entity_id
+      TEXT summary
+      TIMESTAMPTZ created_at
+    }
