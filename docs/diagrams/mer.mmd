@@ -76,3 +76,31 @@ erDiagram
       int total_requests
       decimal final_error_rate
     }
+
+    PROJECT ||--o{ COMPARISON_REPORT : organiza
+    USER ||--o{ COMPARISON_REPORT : cria
+    COMPARISON_REPORT ||--|{ COMPARISON_REPORT_EXECUTION : agrupa
+    TEST_EXECUTION ||--o{ COMPARISON_REPORT_EXECUTION : participa
+    USER o|--o{ OPERATION_LOG : ator
+    COMPARISON_REPORT {
+      uuid id PK
+      uuid project_id FK
+      uuid created_by FK
+      string conditions_fingerprint
+      string results_json
+    }
+    COMPARISON_REPORT_EXECUTION {
+      uuid id PK
+      uuid comparison_report_id FK
+      uuid execution_id FK
+      int repetition_number
+    }
+    OPERATION_LOG {
+      uuid id PK
+      uuid actor_id FK
+      string action
+      string entity_type
+      uuid entity_id
+      string summary
+      datetime created_at
+    }
