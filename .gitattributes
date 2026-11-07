@@ -1,3 +1,4 @@
 *.pdf binary
 *.png binary
 *.docx binary
+docs/evidences/sprint-09/** -text
