@@ -36,7 +36,7 @@ class EndpointWrite(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     base_url: AnyHttpUrl
     http_method: str = "GET"
-    authorization_confirmed: bool = False
+    authorization_confirmed: bool = Field(default=False, strict=True)
     authorization_evidence: str | None = Field(default=None, max_length=5000)
 
     @field_validator("name")
