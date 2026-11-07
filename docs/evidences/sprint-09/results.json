@@ -1,0 +1,107 @@
+{
+  "captured_at": "2026-11-07T01:17:00.712Z",
+  "records": [
+    {
+      "id": "NAV-01",
+      "expected": "Login QA abre projetos; credenciais invalidas sao rejeitadas",
+      "obtained": "Login QA abre projetos; credenciais invalidas sao rejeitadas",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-02",
+      "expected": "Campo obrigatorio bloqueia envio; projeto criado, editado e recuperado",
+      "obtained": "Campo obrigatorio bloqueia envio; projeto criado, editado e recuperado",
+      "status": "PASS"
+    },
+    {
+      "id": "VAL-UI-01",
+      "expected": "URL invalida e evidencia ausente bloqueiam formulario; endpoint valido persiste",
+      "obtained": "URL invalida e evidencia ausente bloqueiam formulario; endpoint valido persiste",
+      "status": "PASS"
+    },
+    {
+      "id": "VAL-UI-02",
+      "expected": "Concorrencia inicial maior que maxima desabilita salvar; cenario valido persiste",
+      "obtained": "Concorrencia inicial maior que maxima desabilita salvar; cenario valido persiste",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-03",
+      "expected": "Editar/cancelar cenario conserva dados e execucao exige confirmacao",
+      "obtained": "COMPLETED; 1 janela(s), requisicoes reais e metricas recuperadas.",
+      "status": "PASS"
+    },
+    {
+      "id": "VAL-API-01",
+      "expected": "PostgreSQL impede apagar alvo com cenario e cenario com historico",
+      "obtained": "PostgreSQL impede apagar alvo com cenario e cenario com historico",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-04",
+      "expected": "Treinamento sem amostras suficientes informa impedimento",
+      "obtained": "Treinamento sem amostras suficientes informa impedimento",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-05",
+      "expected": "Relatorio individual gerado e PDF baixado com assinatura valida",
+      "obtained": "Relatorio individual gerado e PDF baixado com assinatura valida",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-06",
+      "expected": "Parada emergencial finaliza execucao real como CANCELLED",
+      "obtained": "Parada emergencial finaliza execucao real como CANCELLED",
+      "status": "PASS"
+    },
+    {
+      "id": "FUNC-HTTP-01",
+      "expected": "Nove execucoes reais geram comparacao persistida; fallback fica explicito",
+      "obtained": "3 FIXED + 3 RULES + 3 AI_HYBRID, todas COMPLETED; AI_HYBRID usou fallback sem modelo aprovado; PDF valido.",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-07",
+      "expected": "Dashboard recupera 11 execucoes; filtros invalidos bloqueiam exportacao",
+      "obtained": "Dashboard recupera 11 execucoes; filtros invalidos bloqueiam exportacao",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-08",
+      "expected": "Auditoria lista operacoes e expande detalhes sem erro",
+      "obtained": "Auditoria lista operacoes e expande detalhes sem erro",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-09",
+      "expected": "QA cria, edita e exclui usuario descartavel pela interface",
+      "obtained": "QA cria, edita e exclui usuario descartavel pela interface",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-10",
+      "expected": "Recarregar preserva sessao e dados; sair remove sessao",
+      "obtained": "Recarregar preserva sessao e dados; sair remove sessao",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-11",
+      "expected": "Visualizador consulta sem controles de escrita nem auditoria; API devolve 403",
+      "obtained": "Visualizador consulta sem controles de escrita nem auditoria; API devolve 403",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-12",
+      "expected": "QA nao proprietario consulta sem editar projeto alheio; API devolve 403",
+      "obtained": "QA nao proprietario consulta sem editar projeto alheio; API devolve 403",
+      "status": "PASS"
+    },
+    {
+      "id": "NAV-13",
+      "expected": "Nenhuma excecao JavaScript nos percursos executados",
+      "obtained": "Nenhuma excecao JavaScript nos percursos executados",
+      "status": "PASS"
+    }
+  ]
+}

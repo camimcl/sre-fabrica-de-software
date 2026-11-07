@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-11-07T01:17:28.959Z",
+  "records": [
+    {
+      "id": "NAV-RACE-02",
+      "expected": "Periodo invalido mostra validacao sem carregamento eterno nem dados antigos",
+      "obtained": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n1 !== 0\n",
+      "status": "FAIL"
+    }
+  ]
+}
