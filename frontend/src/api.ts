@@ -14,7 +14,7 @@ export async function api<T>(
   })
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
-    const detail = data.detail
+    const detail = data?.detail
     if (Array.isArray(detail)) {
       const messages = detail
         .map((item) => {
