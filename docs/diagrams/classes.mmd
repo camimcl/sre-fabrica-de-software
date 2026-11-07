@@ -27,8 +27,6 @@ classDiagram
       +UUID id
       +ExecutionStatus status
       +string target_snapshot
-      +start()
-      +cancel(reason)
     }
     class MetricWindow {
       +int sequence_number
@@ -93,12 +91,12 @@ classDiagram
     }
 
     User "1" --> "0..*" Project : possui
-    Project "1" --> "1..*" Endpoint : contém
+    Project "1" --> "0..*" Endpoint : contém
     Endpoint "1" --> "0..*" TestScenario : configura
     TestScenario "1" --> "0..*" TestExecution : origina
-    TestExecution "1" --> "1..*" MetricWindow : registra
+    TestExecution "1" --> "0..*" MetricWindow : registra
     MetricWindow "1" --> "0..1" RiskPrediction : recebe
-    MetricWindow "1" --> "1" ControlDecision : produz
+    MetricWindow "1" --> "0..1" ControlDecision : produz
     ModelVersion "1" --> "0..*" RiskPrediction : gera
     TestExecution "1" --> "0..1" ExecutionReport : consolida
     Project "1" --> "0..*" ComparisonReport : organiza
@@ -110,3 +108,14 @@ classDiagram
     ExecutionCoordinator --> MetricsAggregator
     ExecutionCoordinator --> RiskPredictor
     ExecutionCoordinator --> ConcurrencyController
+
+    class OperationLog {
+      +UUID id
+      +UUID actor_id
+      +AuditAction action
+      +string entity_type
+      +UUID entity_id
+      +string summary
+      +datetime created_at
+    }
+    User "0..1" --> "0..*" OperationLog : ator preservado opcionalmente

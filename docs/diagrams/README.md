@@ -33,3 +33,11 @@ As fontes Mermaid preservam a estrutura editável e os relacionamentos completos
 **MER.** Os agrupamentos destacam a passagem de configuração para experimento e resultado. Relações de resultado são opcionais porque execuções e janelas podem existir antes da conclusão do processamento.
 
 **Modelo relacional.** UUIDs identificam os registros, chaves estrangeiras preservam a rastreabilidade e restrições únicas limitam previsão, decisão e relatório ao seu registro de origem. A cardinalidade do desenho acompanha `database/schema.sql`, a migration Alembic e os modelos SQLAlchemy.
+
+## Revisão Sprint 09 (06/11/2026)
+
+O esquema atual possui 13 tabelas de domínio, além de `alembic_version`. As fontes Mermaid foram revisadas para incluir auditoria e comparações; as cardinalidades de filhos opcionais foram corrigidas. `entity_id` de auditoria é uma referência polimórfica, sem FK, para preservar registros de objetos excluídos. `actor_id` admite NULL e usa SET NULL.
+
+As imagens em `exports/` anteriores são ilustrações históricas do planejamento e não cobrem todas as evoluções. As três [exportações atuais](exports/sprint-09/) são derivadas das colunas SQLAlchemy e mostram PK, FK e nulabilidade sem sobreposição. Os nomes ORM são classes persistidas; as transições start/cancel são funções de API e motor, não métodos da entidade. Os contratos de serviços no desenho de classes representam responsabilidades conceituais.
+
+A previsão refere-se a cinco janelas futuras; dois segundos são a duração nominal por janela. A interface React está implementada. O protótipo [Figma](https://www.figma.com/design/isw6HZdCiomQvSekNScl9J) é referência visual, sujeito à evolução; as capturas da Sprint 09 representam a aplicação executada.
