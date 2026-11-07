@@ -40,4 +40,6 @@ O esquema atual possui 13 tabelas de domínio, além de `alembic_version`. As fo
 
 As imagens em `exports/` anteriores são ilustrações históricas do planejamento e não cobrem todas as evoluções. As três [exportações atuais](exports/sprint-09/) são derivadas das colunas SQLAlchemy e mostram PK, FK e nulabilidade sem sobreposição. Os nomes ORM são classes persistidas; as transições start/cancel são funções de API e motor, não métodos da entidade. Os contratos de serviços no desenho de classes representam responsabilidades conceituais.
 
+Para regenerar os painéis atuais no Windows, execute `python scripts/render_current_models.py` com as dependências do backend e Pillow disponíveis. O exportador usa Arial instalada em `C:/Windows/Fonts`; adapte a fonte ao executar em outro sistema. As exportações atuais complementam as fontes Mermaid; as imagens antigas não devem ser apresentadas como se contivessem as 13 entidades.
+
 A previsão refere-se a cinco janelas futuras; dois segundos são a duração nominal por janela. A interface React está implementada. O protótipo [Figma](https://www.figma.com/design/isw6HZdCiomQvSekNScl9J) é referência visual, sujeito à evolução; as capturas da Sprint 09 representam a aplicação executada.

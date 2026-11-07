@@ -161,6 +161,12 @@ Visualizadores consultam resultados e alteram apenas a própria conta; QA admini
 usuários e modelos, mas só modifica projetos que possui. O backend local exige
 Python 3.11/3.12; os testes do frontend usam Node 22.18+ ou 24 (`npm test`).
 
+## Sprint 09
+
+Verificação em 06/11/2026: **167 testes backend com PostgreSQL, 11 testes frontend, 17 verificações do percurso integrado e dois retestes de respostas atrasadas aprovados**. A API reiniciada recuperou 11 execuções e uma comparação. Foram corrigidos quatro defeitos: consentimento coercível, erros HTTP nulos, contexto de endpoints e carregamento com período inválido.
+
+Consulte o [relatório técnico](docs/relatorio-sprint-09.md), o [registro de bugs](docs/bugs-sprint-09.md), as [evidências](docs/evidences/sprint-09/README.md), o [roteiro de execução](docs/qa-sprint-09.md) e o [plano/divisão](docs/plano-sprint-09.md). O [guia de contribuição](CONTRIBUTING.md) estabelece branches por tarefa e revisão por PR. Esta entrega local ainda depende de publicação autorizada. As metas experimentais de IA não são inferidas da comparação funcional com fallback.
+
 ## Como executar localmente com Docker
 
 1. Copie `.env.example` para `.env`.
