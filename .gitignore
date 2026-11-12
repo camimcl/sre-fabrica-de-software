@@ -30,3 +30,4 @@ npm-cache/
 temp/
 .kiro
 .vscode
+.qa-local/
