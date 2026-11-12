@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { api } from './api'
 import SprintFivePanel from './SprintFivePanel'
@@ -60,6 +60,11 @@ export default function App() {
   const [editingUser, setEditingUser] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [activeView, setActiveView] = useState<View>('projects')
+  const endpointContext = useRef(0)
+
+  useEffect(() => {
+    endpointContext.current += 1
+  }, [selectedId, token])
 
   const selectedProject = projects.find((project) => project.id === selectedId)
   const canEdit = user?.role === 'QA' && selectedProject?.owner_id === user.id
@@ -83,7 +88,9 @@ export default function App() {
   }
 
   async function refreshEndpoints(projectId: string, accessToken: string) {
-    setEndpoints(await api<Endpoint[]>(`/projects/${projectId}/endpoints`, 'GET', undefined, accessToken))
+    const context = endpointContext.current
+    const rows = await api<Endpoint[]>(`/projects/${projectId}/endpoints`, 'GET', undefined, accessToken)
+    if (context === endpointContext.current) setEndpoints(rows)
   }
 
   async function refreshUsers(accessToken: string, currentUser: User) {
@@ -204,6 +211,7 @@ export default function App() {
   async function submitEndpoint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedId) return
+    const context = endpointContext.current
     try {
       const path = editingEndpoint
         ? `/projects/${selectedId}/endpoints/${editingEndpoint}`
@@ -212,20 +220,25 @@ export default function App() {
         ...endpointForm,
         authorization_evidence: endpointForm.authorization_evidence || null,
       }, token)
+      if (context !== endpointContext.current) return
       await refreshEndpoints(selectedId, token)
+      if (context !== endpointContext.current) return
       setEndpointForm(blankEndpoint)
       setEditingEndpoint(null)
       setNotice('Endpoint salvo no banco de dados.')
-    } catch (error) { report(error) }
+    } catch (error) { if (context === endpointContext.current) report(error) }
   }
 
   async function removeEndpoint(endpoint: Endpoint) {
     if (!selectedId || !window.confirm(`Excluir o endpoint “${endpoint.name}”?`)) return
+    const context = endpointContext.current
     try {
       await api<void>(`/projects/${selectedId}/endpoints/${endpoint.id}`, 'DELETE', undefined, token)
+      if (context !== endpointContext.current) return
       await refreshEndpoints(selectedId, token)
+      if (context !== endpointContext.current) return
       setNotice('Endpoint excluído.')
-    } catch (error) { report(error) }
+    } catch (error) { if (context === endpointContext.current) report(error) }
   }
 
   async function submitUser(event: FormEvent<HTMLFormElement>) {
