@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-11-07T01:12:28.039Z",
+  "records": [
+    {
+      "id": "NAV-RACE-01",
+      "expected": "Projeto B conserva seu rascunho e nao mostra endpoint de A",
+      "obtained": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n1 !== 0\n",
+      "status": "FAIL"
+    }
+  ]
+}

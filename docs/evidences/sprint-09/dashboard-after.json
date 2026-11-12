@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-11-07T01:20:11.640Z",
+  "records": [
+    {
+      "id": "NAV-RACE-02",
+      "expected": "Periodo invalido mostra validacao sem carregamento eterno nem dados antigos",
+      "obtained": "Periodo invalido mostra validacao sem carregamento eterno nem dados antigos",
+      "status": "PASS"
+    }
+  ]
+}

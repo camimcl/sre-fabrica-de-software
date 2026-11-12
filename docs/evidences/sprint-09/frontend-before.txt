@@ -1,0 +1,40 @@
+✖ HTTP errors retain a readable fallback for null (1.5746ms)
+✔ HTTP errors retain a readable fallback for [] (0.1926ms)
+✔ HTTP errors retain a readable fallback for {} (0.0985ms)
+✔ HTTP errors retain a readable fallback for 42 (0.0931ms)
+✔ HTTP errors retain a readable fallback for "upstream unavailable" (0.1265ms)
+✔ validation errors name the field and preserve the API explanation (0.5987ms)
+✔ HTML or empty error responses keep status-specific fallbacks (0.3259ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 117.3334
+
+✖ failing tests:
+
+test at tests\sprint09.test.mjs:7:3
+✖ HTTP errors retain a readable fallback for null (1.5746ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Falha na operação \(502\)/. Input:
+
+  "TypeError: Cannot read properties of null (reading 'detail')"
+
+      at async TestContext.<anonymous> (file:///C:/Users/zVaca/Documents/Codex/2026-09-17/eu-t/work/sre-fabrica-de-software/frontend/tests/sprint09.test.mjs:11:7)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: TypeError: Cannot read properties of null (reading 'detail')
+        at api (file:///C:/Users/zVaca/Documents/Codex/2026-09-17/eu-t/work/sre-fabrica-de-software/frontend/src/api.ts:17:25)
+        at async waitForActual (node:assert:646:5)
+        at async strict.rejects (node:assert:769:25)
+        at async TestContext.<anonymous> (file:///C:/Users/zVaca/Documents/Codex/2026-09-17/eu-t/work/sre-fabrica-de-software/frontend/tests/sprint09.test.mjs:11:7)
+        at async Test.run (node:internal/test_runner/test:1409:7)
+        at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3),
+    expected: /Falha na operação \(502\)/,
+    operator: 'rejects',
+    diff: 'simple'
+  }

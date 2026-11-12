@@ -1,0 +1,165 @@
+{
+  "id": "14f15cf4-c52f-40a0-bc6d-1f2b4086967a",
+  "project_id": "d0ecf8d8-4e87-498a-9cd6-6a9d513472cf",
+  "created_by": "d3331539-a130-4723-b98f-09d87c43fa5b",
+  "name": "S09 comparacao funcional local",
+  "repetitions_per_strategy": 3,
+  "conditions_fingerprint": "0170fad32edb395b0ebbeafc3ddb2890fd2689aecdba38ca5b4a264833ce6022",
+  "conditions": {
+    "duration_seconds": 2,
+    "error_rate_limit": "0.10000",
+    "initial_concurrency": 1,
+    "max_concurrency": 2,
+    "p95_limit_ms": 500,
+    "ramp_up_per_window": 1,
+    "target": {
+      "base_url": "http://target:8080/",
+      "endpoint_id": "afbcb7eb-ab25-42b5-bc24-c66f7adf0142",
+      "http_method": "GET",
+      "window_duration_ms": 2000
+    },
+    "timeout_ms": 1000
+  },
+  "results": {
+    "AI_HYBRID": {
+      "compliance_rate": {
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "standard_deviation": 0
+      },
+      "error_rate": {
+        "maximum": 0,
+        "mean": 0,
+        "minimum": 0,
+        "standard_deviation": 0
+      },
+      "latency_p95_ms": {
+        "maximum": 32,
+        "mean": 32,
+        "minimum": 32,
+        "standard_deviation": 0
+      },
+      "peak_concurrency": 1,
+      "runs": 3,
+      "successful_requests": 192,
+      "throughput_rps": {
+        "maximum": 31.6362,
+        "mean": 31.61537,
+        "minimum": 31.5893,
+        "standard_deviation": 0.0195
+      },
+      "timeouts": 0,
+      "total_requests": 192
+    },
+    "FIXED": {
+      "compliance_rate": {
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "standard_deviation": 0
+      },
+      "error_rate": {
+        "maximum": 0,
+        "mean": 0,
+        "minimum": 0,
+        "standard_deviation": 0
+      },
+      "latency_p95_ms": {
+        "maximum": 32,
+        "mean": 32,
+        "minimum": 32,
+        "standard_deviation": 0
+      },
+      "peak_concurrency": 1,
+      "runs": 3,
+      "successful_requests": 192,
+      "throughput_rps": {
+        "maximum": 31.6206,
+        "mean": 31.5842,
+        "minimum": 31.5271,
+        "standard_deviation": 0.04088
+      },
+      "timeouts": 0,
+      "total_requests": 192
+    },
+    "RULES": {
+      "compliance_rate": {
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "standard_deviation": 0
+      },
+      "error_rate": {
+        "maximum": 0,
+        "mean": 0,
+        "minimum": 0,
+        "standard_deviation": 0
+      },
+      "latency_p95_ms": {
+        "maximum": 32,
+        "mean": 32,
+        "minimum": 32,
+        "standard_deviation": 0
+      },
+      "peak_concurrency": 1,
+      "runs": 3,
+      "successful_requests": 191,
+      "throughput_rps": {
+        "maximum": 31.6518,
+        "mean": 31.54377,
+        "minimum": 31.3433,
+        "standard_deviation": 0.14189
+      },
+      "timeouts": 0,
+      "total_requests": 191
+    },
+    "ai_evidence": {
+      "fallback_windows": 3,
+      "inference_windows": 0,
+      "model_version_ids": [],
+      "unverified_windows": 0,
+      "windows": 3
+    },
+    "comparisons": {
+      "AI_HYBRID_vs_FIXED": {
+        "error_rate_change_percent": null,
+        "latency_p95_change_percent": 0,
+        "throughput_change_percent": 0.099
+      },
+      "AI_HYBRID_vs_RULES": {
+        "error_rate_change_percent": null,
+        "latency_p95_change_percent": 0,
+        "throughput_change_percent": 0.227
+      }
+    },
+    "metric_definitions": {
+      "latency_p95_ms": "Mean of per-window P95 values per execution, then statistics across repetitions; not a global P95.",
+      "standard_deviation": "Population standard deviation of the selected repetitions.",
+      "throughput_rps": "Requests divided by observed metric-window duration; excludes time between windows."
+    },
+    "warnings": [
+      {
+        "code": "AI_INFERENCE_UNVERIFIED",
+        "message": "AI_HYBRID includes fallback or unverified windows; differences cannot be attributed exclusively to AI inference."
+      },
+      {
+        "code": "MODEL_VERSION_UNVERIFIED",
+        "message": "a single model version was not verified across AI_HYBRID runs."
+      }
+    ]
+  },
+  "conclusion": "Descriptive comparison generated from equivalent repeated executions. Positive throughput deltas favor AI_HYBRID; negative latency and error deltas favor AI_HYBRID. Dispersion is reported and no statistical significance or production generalization is implied. WARNING: AI_HYBRID includes fallback or unverified windows; differences cannot be attributed exclusively to AI inference. WARNING: a single model version was not verified across AI_HYBRID runs.",
+  "execution_ids": [
+    "709538da-4d89-46c6-b656-33bcc5bc7af8",
+    "768f6558-6acb-459a-a67a-6114ca95e074",
+    "14176075-7e23-467f-a012-73a2a31a7a27",
+    "b4f64d85-5136-4772-816a-4ded72d0fcb3",
+    "659ab005-bdc0-46a9-ab82-9ff19881fb13",
+    "405e8a9b-9343-4b72-a503-d45ec0ad5c8b",
+    "2e50153d-fdd5-4260-a37f-43ce28847fba",
+    "cfdb950a-da7e-4c83-8913-bb4b06755454",
+    "63e50b43-3753-4460-ae90-be9e19dcd611"
+  ],
+  "generated_at": "2026-11-07T01:16:58.502171Z"
+}
