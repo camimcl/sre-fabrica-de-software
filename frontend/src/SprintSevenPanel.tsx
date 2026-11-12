@@ -136,6 +136,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
     setDashboard(null)
     setExecPage(null)
     setLogs(null)
+    if (!validRange) setLoading(false)
     if (validRange) {
       if (tab === 'dashboard') void loadDashboard()
       if (tab === 'queries') void loadExecutions()
