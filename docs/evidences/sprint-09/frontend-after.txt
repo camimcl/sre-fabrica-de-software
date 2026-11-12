@@ -1,0 +1,19 @@
+✔ local date filters preserve the whole day and the other criteria (6.4156ms)
+✔ legacy audit details do not crash the operations panel (0.3308ms)
+✔ downloads expose the missing report action and API errors (0.4067ms)
+✔ successful downloads use authentication and release temporary resources (1.4364ms)
+✔ HTTP errors retain a readable fallback for null (0.8388ms)
+✔ HTTP errors retain a readable fallback for [] (0.106ms)
+✔ HTTP errors retain a readable fallback for {} (0.0946ms)
+✔ HTTP errors retain a readable fallback for 42 (0.0802ms)
+✔ HTTP errors retain a readable fallback for "upstream unavailable" (0.1133ms)
+✔ validation errors name the field and preserve the API explanation (0.5746ms)
+✔ HTML or empty error responses keep status-specific fallbacks (0.1769ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 93.5291

@@ -1,0 +1,18 @@
+﻿caso,esperado,obtido,resultado
+NAV-01,Login QA abre projetos; credenciais invalidas sao rejeitadas,Login QA abre projetos; credenciais invalidas sao rejeitadas,PASS
+NAV-02,"Campo obrigatorio bloqueia envio; projeto criado, editado e recuperado","Campo obrigatorio bloqueia envio; projeto criado, editado e recuperado",PASS
+VAL-UI-01,URL invalida e evidencia ausente bloqueiam formulario; endpoint valido persiste,URL invalida e evidencia ausente bloqueiam formulario; endpoint valido persiste,PASS
+VAL-UI-02,Concorrencia inicial maior que maxima desabilita salvar; cenario valido persiste,Concorrencia inicial maior que maxima desabilita salvar; cenario valido persiste,PASS
+NAV-03,Editar/cancelar cenario conserva dados e execucao exige confirmacao,"COMPLETED; 1 janela(s), requisicoes reais e metricas recuperadas.",PASS
+VAL-API-01,PostgreSQL impede apagar alvo com cenario e cenario com historico,PostgreSQL impede apagar alvo com cenario e cenario com historico,PASS
+NAV-04,Treinamento sem amostras suficientes informa impedimento,Treinamento sem amostras suficientes informa impedimento,PASS
+NAV-05,Relatorio individual gerado e PDF baixado com assinatura valida,Relatorio individual gerado e PDF baixado com assinatura valida,PASS
+NAV-06,Parada emergencial finaliza execucao real como CANCELLED,Parada emergencial finaliza execucao real como CANCELLED,PASS
+FUNC-HTTP-01,Nove execucoes reais geram comparacao persistida; fallback fica explicito,"3 FIXED + 3 RULES + 3 AI_HYBRID, todas COMPLETED; AI_HYBRID usou fallback sem modelo aprovado; PDF valido.",PASS
+NAV-07,Dashboard recupera 11 execucoes; filtros invalidos bloqueiam exportacao,Dashboard recupera 11 execucoes; filtros invalidos bloqueiam exportacao,PASS
+NAV-08,Auditoria lista operacoes e expande detalhes sem erro,Auditoria lista operacoes e expande detalhes sem erro,PASS
+NAV-09,"QA cria, edita e exclui usuario descartavel pela interface","QA cria, edita e exclui usuario descartavel pela interface",PASS
+NAV-10,Recarregar preserva sessao e dados; sair remove sessao,Recarregar preserva sessao e dados; sair remove sessao,PASS
+NAV-11,Visualizador consulta sem controles de escrita nem auditoria; API devolve 403,Visualizador consulta sem controles de escrita nem auditoria; API devolve 403,PASS
+NAV-12,QA nao proprietario consulta sem editar projeto alheio; API devolve 403,QA nao proprietario consulta sem editar projeto alheio; API devolve 403,PASS
+NAV-13,Nenhuma excecao JavaScript nos percursos executados,Nenhuma excecao JavaScript nos percursos executados,PASS

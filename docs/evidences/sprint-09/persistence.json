@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-11-07T01:21:30.602327+00:00",
+  "status": "PASS",
+  "procedure": "SQL counts using independent connection; API restart; fresh login and HTTP reads",
+  "tables": [
+    "alembic_version",
+    "comparison_report_executions",
+    "comparison_reports",
+    "control_decisions",
+    "endpoints",
+    "execution_reports",
+    "metric_windows",
+    "model_versions",
+    "operation_logs",
+    "projects",
+    "risk_predictions",
+    "test_executions",
+    "test_scenarios",
+    "users"
+  ],
+  "migration_head": "20261020_0007",
+  "global_demo_counts": {
+    "test_scenarios": 6,
+    "test_executions": 12,
+    "metric_windows": 12,
+    "execution_reports": 10,
+    "comparison_reports": 1
+  },
+  "project_id": "d0ecf8d8-4e87-498a-9cd6-6a9d513472cf",
+  "project_name_recovered": "Sprint 09 - demonstracao 2026-11-07T01-16-29-000Z",
+  "dashboard_after_restart": {
+    "totals": {
+      "executions": 11,
+      "scenarios": 5,
+      "endpoints": 1,
+      "comparisons": 1
+    },
+    "executions_by_status": {
+      "PENDING": 0,
+      "RUNNING": 0,
+      "COMPLETED": 10,
+      "CANCELLED": 1,
+      "FAILED": 0
+    },
+    "executions_by_strategy": {
+      "FIXED": 3,
+      "RULES": 5,
+      "AI_HYBRID": 3
+    },
+    "completion_rate": 0.90909,
+    "performance": {
+      "avg_throughput_rps": 31.528,
+      "avg_latency_p95_ms": 32.0,
+      "avg_error_rate": 0.0
+    },
+    "timeseries_executions_per_day": [
+      {
+        "day": "2026-11-07",
+        "count": 11
+      }
+    ]
+  },
+  "comparisons_recovered": 1
+}
