@@ -39,6 +39,7 @@ services:
       context: ./backend
     container_name: loadforge-api
     restart: unless-stopped
+    stop_grace_period: 75s
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-loadforge}
       POSTGRES_USER: ${POSTGRES_USER:-loadforge}
@@ -47,6 +48,7 @@ services:
       POSTGRES_PORT: 5432
       LOADFORGE_TOKEN_SECRET: ${LOADFORGE_TOKEN_SECRET:?Defina LOADFORGE_TOKEN_SECRET no arquivo .env}
       LOADFORGE_MODEL_DIR: /app/backend/models/artifacts
+      LOADFORGE_MANAGED_RUNTIME: "1"
     volumes:
       - loadforge_model_artifacts:/app/backend/models/artifacts
     ports:
