@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { api } from './api'
+import { messageForUser } from './presentation'
 import SprintFivePanel from './SprintFivePanel'
 import SprintSixReportsPanel from './SprintSixReportsPanel'
 import SprintSevenPanel from './SprintSevenPanel'
@@ -78,7 +79,7 @@ export default function App() {
   }
 
   const report = useCallback((error: unknown) => {
-    setNotice(typeof error === 'string' ? error : error instanceof Error ? error.message : 'Ocorreu um erro inesperado.')
+    setNotice(messageForUser(typeof error === 'string' ? error : error instanceof Error ? error.message : 'Ocorreu um erro inesperado.'))
   }, [])
 
   async function refreshProjects(accessToken: string) {
@@ -310,7 +311,7 @@ export default function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">LF</span><div><strong>LoadForge</strong><small>Ambiente local · Sprint 08</small></div></div>
+        <div className="brand"><span className="brand-mark">LF</span><div><strong>LoadForge</strong><small>Release Candidate · 1.0.0-rc.1</small></div></div>
         {user && <nav className="main-nav" aria-label="Navegação principal">
           <button className={activeView === 'projects' ? 'active' : ''} onClick={() => setActiveView('projects')}>Projetos</button>
           <button className={activeView === 'tests' ? 'active' : ''} onClick={() => setActiveView('tests')}>Execuções</button>

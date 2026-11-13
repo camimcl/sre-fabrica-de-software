@@ -3,6 +3,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import get_engine
+from app.runtime import lifespan
+from app.api_documentation import install_openapi
 from app.modules.auth.api import router as auth_router
 from app.modules.intelligence.api import execution_router as intelligence_execution_router
 from app.modules.intelligence.api import router as intelligence_router
@@ -14,7 +16,7 @@ from app.modules.dashboard.api import router as dashboard_router
 from app.modules.exports.api import router as exports_router
 
 
-app = FastAPI(title="LoadForge API", version="0.8.0")
+app = FastAPI(title="LoadForge API", version="1.0.0-rc.1", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(load_tests_router)
@@ -41,3 +43,6 @@ def ready() -> dict[str, str]:
     except (SQLAlchemyError, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
     return {"status": "ok", "database": "connected"}
+
+
+install_openapi(app)

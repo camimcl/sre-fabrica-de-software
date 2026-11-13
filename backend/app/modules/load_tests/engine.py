@@ -160,6 +160,18 @@ class EngineRegistry:
     def is_running(self, execution_id: UUID) -> bool:
         return execution_id in self._cancel_events
 
+    async def shutdown(self, timeout: float = 70) -> None:
+        """Stop new traffic and drain in-flight requests before API shutdown."""
+        tasks = list(self._tasks.values())
+        for event in list(self._cancel_events.values()):
+            event.set()
+        if not tasks:
+            return
+        _, pending = await asyncio.wait(tasks, timeout=timeout)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
 
 registry = EngineRegistry()
 
@@ -447,6 +459,12 @@ async def run_execution(execution_id: UUID, cancel_event: asyncio.Event) -> None
             await asyncio.to_thread(
                 _finalize_execution, execution_id, ExecutionStatus.COMPLETED
             )
+    except asyncio.CancelledError:
+        await asyncio.shield(asyncio.to_thread(
+            _finalize_execution, execution_id, ExecutionStatus.FAILED,
+            'Execução interrompida pelo encerramento do processo da API.',
+        ))
+        raise
     except SQLAlchemyError:
         await asyncio.to_thread(
             _finalize_execution, execution_id, ExecutionStatus.FAILED,
