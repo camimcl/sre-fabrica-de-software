@@ -32,6 +32,7 @@ def credentials():
 def compose(*args, **kwargs):
     env = os.environ.copy()
     env.update({k: v for k, v in credentials().items() if k.startswith('QA_')})
+    kwargs.setdefault('timeout', 240 if 'up' in args else 100)
     return subprocess.run(['docker', 'compose', '-p', 'loadforge-s09-qa',
                            '-f', str(Path(__file__).with_name('compose.yml')), *args],
                           env=env, **kwargs)
@@ -76,6 +77,11 @@ def suite(label):
     env = os.environ.copy()
     env.update(DATABASE_URL=database_url(database), LOADFORGE_TEST_DATABASE_URL=database_url(database),
                LOADFORGE_TEST_ARTIFACT_ROOT=str(LOCAL / 'test-models'), PYTHONIOENCODING='utf-8')
+    # Keep large scientific/test temporary files beside the disposable lab,
+    # rather than filling the OS volume on installations on another drive.
+    temp = LOCAL / 'tmp'
+    temp.mkdir(exist_ok=True)
+    env.update(TMP=str(temp), TEMP=str(temp), TMPDIR=str(temp))
     subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'],
                    cwd=ROOT / 'backend', env=env, check=True)
     result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider',
