@@ -138,6 +138,12 @@ laboratório** durante o teste; não use o laboratório para outra demonstraçã
 simultânea. Resultados e credenciais ficam separados em `.qa-local`; não
 publique credenciais. Confira também o [roteiro manual](qa-sprint-09.md).
 
+Para verificar somente os fluxos HTTP sem interromper o contêiner, use
+`python scripts/qa/release_candidate.py --skip-restart`. Nesse modo, o resultado
+declara `PASS_FUNCTIONAL_ONLY` e lista reinício/recuperação como não executados;
+isso não substitui o aceite completo. Cada etapa concluída é salva antes da
+próxima; `IN_PROGRESS` não significa aprovação do roteiro inteiro.
+
 ## Limites para a entrega final
 
 - Os testes locais não substituem homologação com usuários e infraestrutura de entrega.

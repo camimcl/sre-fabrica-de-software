@@ -65,6 +65,12 @@ instalação, atualização, cópias de segurança, recuperação e limites.
   três registros. Dashboard sem overflow horizontal nas larguras 320 e 360.
 - Resultados do percurso HTTP e do teste de recuperação são registrados no
   [índice de evidências](evidences/sprint-10/README.md), com suas limitações.
+- Percurso final: **7 verificações integradas aprovadas**, incluindo nove
+  execuções concluídas, comparação, CSV/PDF, filtros, permissões e reinício.
+  O desligamento normal preservou CANCELLED; SIGKILL seguido de startup
+  preservou métricas/comparação e registrou FAILED com auditoria, sem replay.
+- O contrato cobre **50 operações HTTP**. O validador foi executado também no
+  contêiner final, com `ok: true` e nenhuma divergência de estrutura.
 
 Os ensaios comparativos curtos usam alvo Docker próprio, concorrência pequena e
 três repetições por estratégia. Comprovam integração, condições e avisos; não
@@ -95,6 +101,8 @@ para D:, os temporários do laboratório passaram a ficar junto dele e a unidade
 foi liberada pelo responsável. Após corrigir a interferência do modelo sintético,
 a regressão completa foi repetida e aprovada. Isso foi falha de ambiente e de
 isolamento de teste, não evidência de aprovação na primeira tentativa.
+O Docker precisou ser reiniciado pelo responsável; depois, as imagens foram
+reconstruídas e o percurso completo, inclusive recuperação, foi aprovado.
 
 Não houve retirada de funcionalidade do MVP. Continuam fora do escopo execução
 distribuída/alta disponibilidade, múltiplos workers, deploy público e ampliação
