@@ -56,6 +56,10 @@ jobs:
         run: uv sync --locked --extra dev --no-install-project
       - name: Apply PostgreSQL migrations
         run: uv run --no-sync alembic upgrade head
+      - name: Validate final database contract
+        run: uv run --no-sync python -m app.cli check-db
+      - name: Check generated API reference
+        run: uv run --no-sync python ../scripts/export_api_reference.py --check
       - name: Run all backend tests
         env:
           LOADFORGE_MODEL_DIR: ${{ runner.temp }}/loadforge-models
