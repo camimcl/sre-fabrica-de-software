@@ -1,6 +1,7 @@
 """Local administrative commands for the first QA account."""
 
 import argparse
+import json
 from getpass import getpass
 
 from pydantic import ValidationError
@@ -22,7 +23,15 @@ def main() -> None:
     bootstrap = commands.add_parser("create-qa", help="Create the first QA account")
     bootstrap.add_argument("--name", required=True)
     bootstrap.add_argument("--email", required=True)
+    commands.add_parser("check-db", help="Validate migrated PostgreSQL without changing data")
     args = parser.parse_args()
+
+    if args.command == 'check-db':
+        from app.db.validation import validate_database
+        with get_engine().connect() as connection:
+            result = validate_database(connection)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        raise SystemExit(0 if result['ok'] else 1)
 
     password = getpass("Password (at least 12 characters): ")
     confirmation = getpass("Repeat password: ")
