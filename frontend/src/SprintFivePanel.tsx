@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { api } from './api'
+import { label } from './presentation'
 
 type EndpointOption = {
   id: string
@@ -27,6 +28,7 @@ type Execution = {
   model_version_id: string | null
   started_at: string | null
   ended_at: string | null
+  cancellation_reason: string | null
 }
 type Metric = {
   id: string
@@ -384,7 +386,7 @@ export default function SprintFivePanel({
               setDecisions([])
               setScenarioId(event.target.value)
             }}>
-              {scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name} · {scenario.strategy}</option>)}
+              {scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name} · {label(scenario.strategy)}</option>)}
             </select>
           ) : <p className="empty compact">Nenhum cenário persistido neste projeto.</p>}
           {canEdit && scenarioId && <div className="actions"><button disabled={!!busy} onClick={editScenario}>Editar cenário</button><button className="danger" disabled={!!busy} onClick={() => void deleteScenario()}>Excluir cenário</button></div>}
@@ -415,14 +417,15 @@ export default function SprintFivePanel({
 
         <div className="adaptive-column">
           <div className="subsection-heading"><h3>Execuções</h3><span>{executions.length}</span></div>
-          {executions.length ? <select value={executionId} onChange={(event) => setExecutionId(event.target.value)}>{executions.map((execution) => <option key={execution.id} value={execution.id}>{execution.status} · {execution.strategy} · {execution.id.slice(0, 8)}</option>)}</select> : <p className="empty compact">Crie e inicie a primeira execução.</p>}
+          {executions.length ? <select aria-label="Execução selecionada" value={executionId} onChange={(event) => setExecutionId(event.target.value)}>{executions.map((execution) => <option key={execution.id} value={execution.id}>{label(execution.status)} · {label(execution.strategy)} · {execution.id.slice(0, 8)}</option>)}</select> : <p className="empty compact">Crie e inicie a primeira execução.</p>}
           {canEdit && <><label className="checkbox"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /> Confirmo que tenho autorização para testar este alvo.</label><div className="actions adaptive-actions"><button className="primary" disabled={!scenarioId || !acknowledged || busy === 'execution'} onClick={createAndStartExecution}>Criar e iniciar</button><button className="danger" disabled={selectedExecution?.status !== 'RUNNING' || busy === 'stop'} onClick={stopExecution}>Parada emergencial</button></div></>}
-          {selectedExecution && <div className="execution-status"><strong>{selectedExecution.status}</strong><span>{selectedExecution.model_version_id ? 'Modelo local associado' : selectedExecution.strategy === 'AI_HYBRID' ? 'Executando com fallback quando necessário' : 'Controle sem modelo'}</span></div>}
+          {selectedExecution && <div className="execution-status"><strong>{label(selectedExecution.status)}</strong><span>{selectedExecution.model_version_id ? 'Modelo local associado' : selectedExecution.strategy === 'AI_HYBRID' ? 'Sem modelo associado; consulte as decisões de controle.' : 'Controle sem modelo'}</span></div>}
+          {selectedExecution?.cancellation_reason && <p className="helper" role="status">Motivo do encerramento: {selectedExecution.cancellation_reason}</p>}
         </div>
 
         <div className="adaptive-column">
           <div className="subsection-heading"><h3>Modelos locais</h3><span>{models.length}</span></div>
-          {models.length ? <div className="model-list">{models.map((model) => { const evidence = parseModelEvidence(model.notes); const target = evidence?.recall_target ?? 0.8; const met = Number(model.recall_score ?? 0) >= target; return <article key={model.id}><div><strong>{model.algorithm}</strong><small>{model.version} · {model.training_sample_count} amostras</small><small>F1 {model.f1_score ?? '—'} · recall {model.recall_score ?? '—'} · meta {target.toFixed(2)}</small></div><span className={`model-status ${model.status.toLowerCase()}`}>{model.status}</span><span className={met ? 'target-met' : 'target-missed'}>{met ? 'Meta de recall atingida' : 'Recall abaixo da meta'}</span>{isQa && model.status === 'CANDIDATE' && <button disabled={busy === model.id || !met} title={!met ? 'A aprovação exige recall mínimo de 0,80' : undefined} onClick={() => approveModel(model.id)}>Aprovar</button>}</article> })}</div> : <p className="empty compact">Ainda não há versão treinada.</p>}
+          {models.length ? <div className="model-list">{models.map((model) => { const evidence = parseModelEvidence(model.notes); const target = evidence?.recall_target ?? 0.8; const met = Number(model.recall_score ?? 0) >= target; return <article key={model.id}><div><strong>{model.algorithm}</strong><small>{model.version} · {model.training_sample_count} amostras</small><small>F1 {model.f1_score ?? '—'} · recall {model.recall_score ?? '—'} · meta {target.toFixed(2)}</small></div><span className={`model-status ${model.status.toLowerCase()}`}>{label(model.status)}</span><span className={met ? 'target-met' : 'target-missed'}>{met ? 'Meta de recall atingida' : 'Recall abaixo da meta'}</span>{isQa && model.status === 'CANDIDATE' && <button disabled={busy === model.id || !met} title={!met ? 'A aprovação exige recall mínimo de 0,80' : undefined} onClick={() => approveModel(model.id)}>Aprovar</button>}</article> })}</div> : <p className="empty compact">Ainda não há versão treinada.</p>}
           {isQa && <button className="primary train-button" disabled={busy === 'train'} onClick={trainModel}>Treinar nova versão</button>}
           <p className="helper">O treinamento exige ao menos 20 amostras temporais e as duas classes. Novas aprovações exigem recall mínimo de 0,80.</p>
           {approvedModel && <p className="model-evidence">Limiar de decisão: {modelEvidence?.decision_threshold?.toFixed(2) ?? 'legado (0,50)'} · meta {modelEvidence?.recall_target?.toFixed(2) ?? '0,80'}.</p>}
@@ -431,7 +434,7 @@ export default function SprintFivePanel({
 
       <div className="monitor-block">
         <div className="subsection-heading"><h3>Monitor adaptativo</h3><span>{metrics.length} janelas</span></div>
-        {metrics.length ? <div className="table-scroll"><table><thead><tr><th>Janela</th><th>Concorrência</th><th>Throughput</th><th>P95</th><th>Erros</th><th>Risco</th><th>Decisão</th></tr></thead><tbody>{metrics.map((metric) => { const risk = predictionByWindow.get(metric.id); const decision = decisionByWindow.get(metric.id); return <tr key={metric.id}><td>#{metric.sequence_number + 1}</td><td>{metric.concurrency}</td><td>{Number(metric.throughput_rps).toFixed(1)} rps</td><td>{Number(metric.latency_p95_ms).toFixed(0)} ms</td><td>{(Number(metric.error_rate) * 100).toFixed(1)}%</td><td>{risk ? `${(Number(risk.risk_probability) * 100).toFixed(0)}%` : 'regras'}</td><td>{decision ? <span title={decision.reason}>{decision.action} · {decision.previous_concurrency}→{decision.next_concurrency}</span> : '—'}</td></tr> })}</tbody></table></div> : <p className="empty compact">As janelas, previsões e decisões aparecerão após o início da execução.</p>}
+        {metrics.length ? <div className="table-scroll"><table><thead><tr><th>Janela</th><th>Concorrência</th><th>Throughput</th><th>P95</th><th>Erros</th><th>Risco</th><th>Decisão</th></tr></thead><tbody>{metrics.map((metric) => { const risk = predictionByWindow.get(metric.id); const decision = decisionByWindow.get(metric.id); return <tr key={metric.id}><td>#{metric.sequence_number + 1}</td><td>{metric.concurrency}</td><td>{Number(metric.throughput_rps).toFixed(1)} rps</td><td>{Number(metric.latency_p95_ms).toFixed(0)} ms</td><td>{(Number(metric.error_rate) * 100).toFixed(1)}%</td><td>{risk ? `${(Number(risk.risk_probability) * 100).toFixed(0)}%` : 'regras'}</td><td>{decision ? <span title={decision.reason}>{label(decision.action)} · {decision.previous_concurrency}→{decision.next_concurrency}</span> : '—'}</td></tr> })}</tbody></table></div> : <p className="empty compact">As janelas, previsões e decisões aparecerão após o início da execução.</p>}
       </div>
     </section>
   )
