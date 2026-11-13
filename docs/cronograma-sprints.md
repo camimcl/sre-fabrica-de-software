@@ -22,7 +22,7 @@ Essa antecipação não elimina a etapa experimental. Ela desloca para a Sprint 
 | 07 | Dashboard, relatórios, pesquisas, filtros, exportação e auditoria | Implementada e integrada (PR 6) | Indicadores e consultas com dados persistidos, CSV/PDF e histórico de operações |
 | 08 | Consolidação funcional, permissões, usabilidade e regras de negócio | Implementada e integrada (PR 7) | Gestão completa de cenários, exportações integradas, matriz de acesso testada, validação de autorização, proteção do último QA e evidências automatizadas |
 | 09 | Regressão integrada e correções de estabilidade | Integrada na base `cc9984f` | 167 testes backend, 11 frontend, percurso e persistência registrados no relatório histórico |
-| 10 | Release Candidate 1.0.0-rc.1 | Implementada e validada localmente | 187 testes backend, 14 frontend, sete verificações integradas, recuperação real, banco conferido, OpenAPI e README atualizados; publicação posterior |
+| 10 | Release Candidate 1.0.0-rc.1 | Validada localmente e publicada para revisão, sem merge | 187 testes backend, 14 frontend, sete verificações integradas, recuperação real, banco conferido, OpenAPI e README atualizados; PRs #22 a #28 |
 
 ## Critérios experimentais da Sprint 06
 

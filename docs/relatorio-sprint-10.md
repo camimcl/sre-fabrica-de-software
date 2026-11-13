@@ -2,8 +2,10 @@
 
 Data: 13/11/2026. Produto: LoadForge 1.0.0-rc.1.
 Base revisada: `main` em `cc9984f`, incluindo as entregas da Sprint 09.
-Integração local: `chore/s10-release-candidate`. Não foi feito push nem aberto PR
-nesta sprint; a publicação fica para solicitação posterior.
+Branch de integração: `chore/s10-release-candidate`. Após a validação local,
+a publicação foi autorizada em 13/11/2026. As branches foram enviadas e os PRs
+#22 a #28 foram abertos, sem merge ou auto-merge. O PR principal de entrega é
+[#28](https://github.com/camimcl/sre-fabrica-de-software/pull/28).
 
 ## Revisão da base e problemas encontrados
 
@@ -110,13 +112,32 @@ da IA. CPU do alvo não é medida e o fallback local documentado não deve ser
 apresentado como medição real do alvo. Os limites e as medidas operacionais
 estão no guia da RC.
 
-Próximos passos: revisão pela equipe e homologação com usuários; repetir campanha
+Próximos passos: concluir a revisão dos PRs pela equipe e homologação com usuários; repetir campanha
 experimental com modelos aprovados e condições representativas; ensaiar
-backup/restauração na infraestrutura final; validar apresentação e, após
-autorização, publicar a branch e abrir o PR. Atualizações da biblioteca de testes
+backup/restauração na infraestrutura final; validar apresentação e acompanhar os
+checks remotos e as solicitações de revisão. Atualizações da biblioteca de testes
 devem ser tratadas em revisão própria, com nova regressão.
 
 Os nomes e papéis da equipe já constavam no README e foram preservados. Não foram
 inventados matrículas, assinaturas, aceite da banca, datas de apresentação ou
 endereço de implantação que não foram fornecidos. Repositório oficial:
 [GitHub do LoadForge](https://github.com/camimcl/sre-fabrica-de-software).
+
+## Publicação e revisão
+
+| PR | Escopo | Destino |
+|---|---|---|
+| [#22](https://github.com/camimcl/sre-fabrica-de-software/pull/22) | Estabilidade e recuperação | `main` |
+| [#23](https://github.com/camimcl/sre-fabrica-de-software/pull/23) | Banco final | Branch de #22 |
+| [#24](https://github.com/camimcl/sre-fabrica-de-software/pull/24) | Contratos de API | Branch de #23 |
+| [#25](https://github.com/camimcl/sre-fabrica-de-software/pull/25) | Interface | Branch de #24 |
+| [#26](https://github.com/camimcl/sre-fabrica-de-software/pull/26) | Isolamento da regressão | Checkpoint `docs/s10-preparacao-regressao` (`653e816`) |
+| [#27](https://github.com/camimcl/sre-fabrica-de-software/pull/27) | Operação e evidências | Branch de #26 |
+| [#28](https://github.com/camimcl/sre-fabrica-de-software/pull/28) | RC consolidada | `main` |
+
+Camile (`camimcl`) e Aline (`aline-exe`) foram solicitadas como revisoras em todos
+os PRs. As bases intermediárias explicitam dependências; o checkpoint de #26
+corresponde à preparação que já existia antes daquela tarefa. O PR consolidado
+cobre a entrega completa e os commits de preparação. As descrições distinguem
+resultados locais dos checks hospedados. Os commits/merges locais anteriores
+foram preservados; nenhuma nova operação de merge foi realizada na publicação.
