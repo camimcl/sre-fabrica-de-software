@@ -1,6 +1,6 @@
 # Referência completa das APIs
 
-Contrato: 0.8.0. Gerado de [openapi.json](openapi.json).
+Contrato: 1.0.0-rc.1. Gerado de [openapi.json](openapi.json).
 
 Schemas completos, exemplos, tipos e limites estão no OpenAPI e em `/docs` ou `/redoc`.
 UUIDs de exemplos são fictícios. Use IDs retornados pelos cadastros do seu ambiente.

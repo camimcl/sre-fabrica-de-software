@@ -1687,7 +1687,7 @@
   "info": {
     "description": "LoadForge: carga autorizada, inteligência local, relatórios e auditoria. Ambiente compartilhado; escritas de projeto exigem QA proprietário.",
     "title": "LoadForge API",
-    "version": "0.8.0"
+    "version": "1.0.0-rc.1"
   },
   "openapi": "3.1.0",
   "paths": {
