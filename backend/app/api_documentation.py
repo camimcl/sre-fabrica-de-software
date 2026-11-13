@@ -73,12 +73,12 @@ def install_openapi(app):
         schema = get_openapi(title=app.title, version=app.version, routes=app.routes,
                              description='LoadForge: carga autorizada, inteligência local, relatórios e auditoria. Ambiente compartilhado; escritas de projeto exigem QA proprietário.')
         schema['servers'] = [{'url': '/', 'description': 'API atual (o frontend utiliza o proxy /api)'}]
-        route_names = {(route.path, method.lower()): route.name for route in app.routes
-                       if getattr(route, 'include_in_schema', False)
-                       for method in getattr(route, 'methods', [])}
         for path, item in schema['paths'].items():
             for method, operation in item.items():
-                name = route_names[(path, method)]
+                # Resolve the public operation identifier; included routers may
+                # be lazy objects instead of flattened APIRoute instances.
+                name = next(name for name in sorted(CATALOG, key=len, reverse=True)
+                            if operation['operationId'].startswith(name + '_'))
                 operation['summary'] = CATALOG[name]
                 protected = bool(operation.get('security'))
                 detail = DETAILS.get(name)
