@@ -12,6 +12,18 @@ from app.modules.reports.models import (
     ComparisonReportExecution,
     ExecutionReport,
 )
+from sqlalchemy import Index
+
+# Query indexes already installed by migrations are also represented in ORM
+# metadata, so Alembic does not propose removing them during future revisions.
+Index('ix_projects_owner_id', Project.owner_id)
+Index('ix_endpoints_project_id', Endpoint.project_id)
+Index('ix_scenarios_project_id', TestScenario.project_id)
+Index('ix_scenarios_endpoint_id', TestScenario.endpoint_id)
+Index('ix_executions_scenario_created', TestExecution.scenario_id, TestExecution.created_at.desc())
+Index('ix_metric_windows_execution_time', MetricWindow.execution_id, MetricWindow.window_started_at)
+Index('ix_predictions_model_version', RiskPrediction.model_version_id)
+Index('ix_model_versions_status', ModelVersion.status)
 
 
 __all__ = [
