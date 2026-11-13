@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api'
+import { label } from './presentation'
 import { download } from './download'
 
 type Strategy = 'FIXED' | 'RULES' | 'AI_HYBRID'
@@ -201,7 +202,7 @@ export default function SprintSixReportsPanel({ token, projectId, canEdit, repor
             {visibleHistory.map((item) => <article key={item.execution_id} className="history-item">
               <label className="run-selector">
                 <input type="checkbox" disabled={!canEdit || Boolean(busy) || item.status !== 'COMPLETED'} checked={selectedExecutionSet.has(item.execution_id)} onChange={() => toggleExecution(item.execution_id)} />
-                <span><strong>{item.scenario_name}</strong><small>{strategyLabel[item.strategy]} · {item.status} · {item.execution_id.slice(0, 8)}</small></span>
+                <span><strong>{item.scenario_name}</strong><small>{strategyLabel[item.strategy]} · {label(item.status)} · {item.execution_id.slice(0, 8)}</small></span>
               </label>
               <div className="run-result">{item.report ? <><strong>{Number(item.report.average_throughput_rps).toFixed(1)} rps</strong><small>P95 da última janela {Number(item.report.final_latency_p95_ms).toFixed(0)} ms · erro agregado {(Number(item.report.final_error_rate) * 100).toFixed(1)}%</small></> : canEdit && ['COMPLETED', 'CANCELLED', 'FAILED'].includes(item.status) ? <button disabled={Boolean(busy)} onClick={() => generateReport(item)}>Gerar relatório</button> : <small>Sem relatório</small>}</div>
             </article>)}

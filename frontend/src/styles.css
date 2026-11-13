@@ -189,3 +189,31 @@ footer { text-align: center; padding: 22px; color: #a3ada5; font-size: 11px; }
 .s7-pager { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 0.75rem; font-size: 0.85rem; }
 .s7-log-head { display: flex; flex-direction: column; align-items: flex-start; background: none; border: none; width: 100%; text-align: left; cursor: pointer; color: inherit; }
 .s7-log-summary { background: rgba(0, 0, 0, 0.25); border-radius: 8px; padding: 0.5rem; margin-top: 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; }
+
+/* Shared RC interaction and reading states. */
+button:focus-visible, a:focus-visible, summary:focus-visible {
+  outline: 3px solid #216fbc;
+  outline-offset: 3px;
+}
+.helper, .muted, .run-selector small, .run-result small, footer { color: #5e6d64; }
+.s7-controls button, .s7-pager button, .s7-panel > button {
+  border: 1px solid #cfe1d5;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  color: #195a46;
+  font-weight: 600;
+}
+.s7-panel > button[aria-pressed="true"] { background: #195a46; color: #fff; }
+.s7-kpis article { background: #f5f8f5; border-color: #dce5dc; }
+.s7-bar-row { grid-template-columns: 95px minmax(0, 1fr) 32px; }
+.s7-bar-track { background: #e1e9e3; color: #26765b; }
+.s7-log-summary { background: #eef3ee; color: #294b3a; }
+.s7-controls input, .s7-controls select { min-width: 0; max-width: 100%; }
+@media (max-width: 560px) {
+  .s7-period { flex-wrap: wrap; }
+  .s7-charts { grid-template-columns: minmax(0, 1fr); }
+  .s7-pager { flex-wrap: wrap; }
+  .s7-controls > input, .s7-controls > select { width: 100%; }
+  .subsection-heading { flex-wrap: wrap; gap: 12px; }
+}
