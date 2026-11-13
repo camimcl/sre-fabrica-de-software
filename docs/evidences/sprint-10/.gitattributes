@@ -1,0 +1,2 @@
+# Preserve captured evidence bytes so SHA-256 remains valid on every platform.
+* -text
