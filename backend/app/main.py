@@ -16,7 +16,7 @@ from app.modules.dashboard.api import router as dashboard_router
 from app.modules.exports.api import router as exports_router
 
 
-app = FastAPI(title="LoadForge API", version="0.8.0", lifespan=lifespan)
+app = FastAPI(title="LoadForge API", version="1.0.0-rc.1", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(load_tests_router)
