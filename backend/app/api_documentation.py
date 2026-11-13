@@ -90,6 +90,14 @@ def install_openapi(app):
                     else:
                         detail = 'QA proprietário. Valida escopo, campos e dependências; conflitos retornam 409.'
                 operation['description'] = detail + ' Os parâmetros, limites e schemas abaixo integram o contrato desta operação.'
+                if name.startswith('export_'):
+                    media = 'application/pdf' if name.endswith('_pdf') else 'text/csv'
+                    operation['description'] += ' Retorna arquivo para download com Content-Disposition; utiliza dados persistidos e exige relatório já gerado quando aplicável.'
+                    operation['responses']['200'] = {
+                        'description': 'Arquivo exportado com sucesso.',
+                        'headers': {'Content-Disposition': {'schema': {'type': 'string'}, 'description': 'attachment e nome do arquivo'}},
+                        'content': {media: {'schema': {'type': 'string', **({'format': 'binary'} if media == 'application/pdf' else {})}}},
+                    }
                 errors = {}
                 if protected or name == 'login': errors['401'] = 'Credenciais ausentes, inválidas ou expiradas.'
                 if protected: errors['403'] = 'Perfil ou propriedade sem permissão para a operação.'
