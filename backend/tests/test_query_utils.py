@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import Integer, String, create_engine, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import StaticPool
 
 from app.core.query import (
@@ -14,10 +14,13 @@ from app.core.query import (
     paginate,
     validate_date_range,
 )
-from app.db.base import Base
+
+class QueryTestBase(DeclarativeBase):
+    """Keep the synthetic query fixture outside the application's schema."""
+    pass
 
 
-class _Row(Base):
+class _Row(QueryTestBase):
     __tablename__ = "query_util_rows"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(50))

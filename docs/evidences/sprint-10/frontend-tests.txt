@@ -1,0 +1,26 @@
+
+> loadforge-frontend@1.0.0-rc.1 test
+> node --experimental-strip-types --test tests/*.test.mjs
+
+✔ local date filters preserve the whole day and the other criteria (6.3074ms)
+✔ legacy audit details do not crash the operations panel (1.0906ms)
+✔ downloads expose the missing report action and API errors (1.3875ms)
+✔ successful downloads use authentication and release temporary resources (3.2178ms)
+✔ HTTP errors retain a readable fallback for null (2.1087ms)
+✔ HTTP errors retain a readable fallback for [] (0.2221ms)
+✔ HTTP errors retain a readable fallback for {} (0.2097ms)
+✔ HTTP errors retain a readable fallback for 42 (0.1534ms)
+✔ HTTP errors retain a readable fallback for "upstream unavailable" (0.4369ms)
+✔ validation errors name the field and preserve the API explanation (0.6001ms)
+✔ HTML or empty error responses keep status-specific fallbacks (0.548ms)
+✔ execution outcomes and strategies have user-facing Portuguese names (2.0388ms)
+✔ unknown historical labels and server details remain visible (0.222ms)
+✔ known session and permission failures guide the user (0.2985ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 233.3187

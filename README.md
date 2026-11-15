@@ -4,6 +4,12 @@ Plataforma web para planejamento, execução e análise de testes de carga contr
 
 Projeto Integrador de Fábrica de Software e Tópicos Avançados da UNINASSAU, turma 2026.2.
 
+**Versão candidata: 1.0.0-rc.1 (Sprint 10).** Repositório oficial:
+[camimcl/sre-fabrica-de-software](https://github.com/camimcl/sre-fabrica-de-software).
+Consulte o [guia da RC](docs/release-candidate.md), a
+[referência completa da API](docs/api/README.md) e o
+[relatório de verificação](docs/relatorio-sprint-10.md).
+
 ## Problema
 
 Equipes de desenvolvimento nem sempre conseguem medir como uma aplicação se comporta quando o volume de acessos aumenta. Um gerador de carga mal dimensionado também pode saturar a própria máquina de teste e distorcer os resultados. Controladores baseados apenas em limites fixos reagem somente depois que a degradação já começou.
@@ -41,9 +47,9 @@ O contrato preditivo é de **cinco janelas futuras**, não dez segundos exatos d
 
 A avaliação utilizará precisão, recall, F1, falsos positivos, antecedência da previsão, latência de inferência, throughput, latência p95, taxa de erro, uso de CPU e estabilidade do controle.
 
-## Arquitetura prevista para o MVP
+## Arquitetura implementada no MVP
 
-O projeto adotará um monólito modular em um único repositório:
+O projeto utiliza um monólito modular em um único repositório:
 
 ```text
 Navegador
@@ -169,6 +175,15 @@ Consulte o [relatório técnico](docs/relatorio-sprint-09.md), o [registro de bu
 
 ## Como executar localmente com Docker
 
+Requisitos: Git, Docker Engine/Desktop ativo e Docker Compose v2. As portas
+padrão são 5173 (interface), 8000 (API) e 5432 (banco local); altere-as no `.env`
+se já estiverem ocupadas. Clone o repositório e entre na pasta antes dos passos:
+
+```bash
+git clone https://github.com/camimcl/sre-fabrica-de-software.git
+cd sre-fabrica-de-software
+```
+
 1. Copie `.env.example` para `.env`.
 2. Defina valores locais fortes e exclusivos para `POSTGRES_PASSWORD` e `LOADFORGE_TOKEN_SECRET`. A chave de token deve ter ao menos 32 caracteres. Mantenha o `.env` fora do controle de versão.
 3. Inicie o ambiente:
@@ -190,6 +205,7 @@ Consulte o [relatório técnico](docs/relatorio-sprint-09.md), o [registro de bu
 
    ```bash
    docker compose ps
+   docker compose exec api python -m app.cli check-db
    ```
 
 7. Para encerrar sem apagar os dados:
@@ -199,6 +215,45 @@ Consulte o [relatório técnico](docs/relatorio-sprint-09.md), o [registro de bu
    ```
 
 Os volumes nomeados `loadforge_pgdata` e `loadforge_model_artifacts` preservam, respectivamente, os dados e os modelos aprováveis entre reinicializações. O serviço opcional `migrate` também permite aplicar as migrations isoladamente com `docker compose --profile tools run --rm migrate`. A porta do PostgreSQL fica limitada ao próprio computador (`127.0.0.1`).
+
+O esquema final da RC mantém a migration `20261020_0007`: 13 tabelas e 33
+restrições CHECK verificadas, além de índices, relacionamentos e tipos. O comando
+`check-db` apenas inspeciona; ele falha quando o banco diverge do contrato.
+O motor usa **uma API/worker por banco**. No encerramento normal, interrompe novas
+requisições e aguarda as que estão em voo. Após interrupção abrupta, a próxima
+inicialização marca execuções ainda ativas como falhas, preserva suas métricas e
+registra a recuperação na auditoria, sem reenviar tráfego automaticamente.
+Consulte [operação, limites e recuperação](docs/release-candidate.md).
+
+### Desenvolvimento sem Docker para a aplicação
+
+Use PostgreSQL 16 acessível, Python **3.11 ou 3.12**, uv **0.11.20** e Node
+**22.18+ ou 24**. Na sessão do backend, configure `DATABASE_URL`,
+`LOADFORGE_TOKEN_SECRET` (32 caracteres ou mais), `LOADFORGE_MODEL_DIR` e
+`LOADFORGE_MANAGED_RUNTIME=1`. O `.env` da raiz é consumido pelo Compose;
+fora dele, exporte as variáveis na sessão. Não exponha senhas no histórico.
+
+No diretório `backend`:
+
+```bash
+uv sync --locked --extra dev --no-install-project
+uv run --no-sync alembic upgrade head
+uv run --no-sync python -m app.cli check-db
+uv run --no-sync python -m app.cli create-qa --name "Nome do QA" --email "qa@exemplo.com"
+uv run --no-sync uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Em outro terminal, no diretório `frontend`:
+
+```bash
+npm ci
+npm run dev
+```
+
+A interface usa o proxy `/api` para a API local. Não utilize `--workers` com
+valor maior que 1; o runtime gerenciado rejeita outro processo no mesmo banco.
+`create-qa` é executado somente no primeiro acesso; depois, gerencie contas pela
+interface autenticada.
 
 ### Rotas principais
 
@@ -233,6 +288,10 @@ Os volumes nomeados `loadforge_pgdata` e `loadforge_model_artifacts` preservam, 
 | `GET /audit/logs` | QA | Consulta a trilha de auditoria de operações com filtros e paginação. |
 
 ### Testes
+
+Para verificar a RC, consulte o [roteiro reproduzível](docs/release-candidate.md).
+Os números das sprints abaixo são históricos; a evidência atual está no
+[relatório da Sprint 10](docs/relatorio-sprint-10.md).
 
 No diretório do backend, instale as dependências de desenvolvimento e execute:
 
