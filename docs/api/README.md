@@ -84,6 +84,10 @@ Invoke-RestMethod -Uri "$baseUrl/projects" -Headers $headers
   dependência ou transição; 422: validação; 503: banco indisponível no readiness.
 - Erro de negócio: `{ "detail": "<explicação>" }`. Validação: `detail` é uma lista
   com `loc`, `msg` e `type`. Clientes devem tratar ambos os formatos.
+- Nas consultas de execuções, dashboard, auditoria e CSV, HTTP 422 pode retornar
+  essa lista (por exemplo, data inválida) ou texto quando o intervalo está
+  invertido: `{ "detail": "date_from must not be after date_to" }`. O OpenAPI
+  documenta ambas as formas por `anyOf`. `GET /users` exige perfil QA.
 - CSV: `text/csv`; PDF: `application/pdf`; cabeçalho `Content-Disposition:
   attachment; filename=...`. PDF exige relatório existente. Os arquivos não são JSON.
 - Throughput usa o tempo observado. P95 médio é média dos P95 das janelas, não o
