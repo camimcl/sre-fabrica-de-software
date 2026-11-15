@@ -1,0 +1,13 @@
+
+> loadforge-frontend@1.0.0-rc.1 build
+> tsc -b && vite build --configLoader runner
+
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 36 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.41 kB │ gzip:  0.28 kB
+dist/assets/index-Byy-ick3.css   17.25 kB │ gzip:  4.39 kB
+dist/assets/index-DszFZF8f.js   273.61 kB │ gzip: 83.07 kB
+✓ built in 1.13s

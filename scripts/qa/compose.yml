@@ -24,7 +24,7 @@ services:
       LOADFORGE_MODEL_DIR: /models
       LOADFORGE_MANAGED_RUNTIME: "1"
     stop_grace_period: 75s
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports: ["127.0.0.1:58109:8000"]
     volumes: ["qa_models:/models"]
     depends_on:

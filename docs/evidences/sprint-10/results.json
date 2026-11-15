@@ -1,0 +1,49 @@
+{
+  "release": "1.0.0-rc.1",
+  "backend_tests": {
+    "passed": 187,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 161.23,
+    "warnings": 1,
+    "warning": "Starlette TestClient/httpx deprecation",
+    "backend_tree": "3bb85564b747485e454e69df7efe4a9900f8c9e9"
+  },
+  "frontend_tests": {
+    "passed": 14,
+    "failed": 0
+  },
+  "frontend_production_build": "PASS",
+  "openapi_operations": 50,
+  "integrated_checks": 7,
+  "container_builds": "PASS",
+  "schema": {
+    "ok": true,
+    "migration_heads": [
+      "20261020_0007"
+    ],
+    "tables": 13,
+    "check_constraints": 33,
+    "issues": []
+  },
+  "visual_checks": {
+    "navigation": [
+      "projects",
+      "executions",
+      "reports",
+      "dashboard",
+      "queries",
+      "audit"
+    ],
+    "dashboard_widths_without_horizontal_overflow": [
+      320,
+      360
+    ]
+  },
+  "limitations": [
+    "Short comparisons verify integration, not an AI performance advantage.",
+    "No production deployment or backup/restore rehearsal.",
+    "Hosted CI not run: local branch only."
+  ]
+}

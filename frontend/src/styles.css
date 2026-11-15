@@ -210,6 +210,16 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 .s7-bar-track { background: #e1e9e3; color: #26765b; }
 .s7-log-summary { background: #eef3ee; color: #294b3a; }
 .s7-controls input, .s7-controls select { min-width: 0; max-width: 100%; }
+.s7-panel .history-item > span strong,
+.s7-panel .history-item > span small { display: block; }
+.s7-panel .history-item > span small { margin-top: 4px; color: #5e6d64; }
+.s7-panel .history-item > button {
+  border: 1px solid #cfe1d5;
+  border-radius: 8px;
+  background: #fff;
+  color: #195a46;
+  padding: 8px 12px;
+}
 @media (max-width: 560px) {
   .s7-period { flex-wrap: wrap; }
   .s7-charts { grid-template-columns: minmax(0, 1fr); }

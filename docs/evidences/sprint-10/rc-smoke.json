@@ -1,0 +1,85 @@
+{
+  "captured_at": "2026-11-13T16:50:51.231182+00:00",
+  "status": "PASS",
+  "revision": "c8d50871208753e9761be01b31e413e507078514",
+  "checks": [
+    "RC version, Swagger and ReDoc available over HTTP",
+    "Nine completed runs: three repetitions per strategy, metrics, decisions and reports",
+    "Repeated comparison persisted with structured warnings",
+    "Dashboard, search and combined filters agree with CSV; execution and comparison PDFs valid",
+    "Viewer can consult/export but cannot create a scenario or access audit",
+    "Graceful API restart drains traffic and persists CANCELLED",
+    "SIGKILL recovery persists FAILED and audit; preserves metrics/comparison and does not replay traffic"
+  ],
+  "project": {
+    "id": "074de410-7b71-493d-9861-ecec5a3388d0",
+    "owner_id": "91ecfec4-783d-4d8f-a354-246414ed1133",
+    "name": "RC - validação 20261113-165051",
+    "description": "Somente alvo Docker local autorizado; teste funcional, sem conclusão de ganho da IA.",
+    "created_at": "2026-11-13T16:50:51.511122Z",
+    "updated_at": "2026-11-13T16:50:51.511122Z"
+  },
+  "scenarios": [
+    {
+      "id": "b3f35979-a867-4342-8d7a-96ce8840df66",
+      "project_id": "074de410-7b71-493d-9861-ecec5a3388d0",
+      "endpoint_id": "e7cee186-1375-4926-b058-8f9ec6fffc8d",
+      "created_by": "91ecfec4-783d-4d8f-a354-246414ed1133",
+      "name": "RC Fixa",
+      "duration_seconds": 2,
+      "initial_concurrency": 1,
+      "max_concurrency": 2,
+      "ramp_up_per_window": 1,
+      "timeout_ms": 1000,
+      "strategy": "FIXED",
+      "p95_limit_ms": 500,
+      "error_rate_limit": "0.10000",
+      "created_at": "2026-11-13T16:50:51.549191Z"
+    },
+    {
+      "id": "b6b25009-e871-493d-8d25-21e37f4f124c",
+      "project_id": "074de410-7b71-493d-9861-ecec5a3388d0",
+      "endpoint_id": "e7cee186-1375-4926-b058-8f9ec6fffc8d",
+      "created_by": "91ecfec4-783d-4d8f-a354-246414ed1133",
+      "name": "RC Regras",
+      "duration_seconds": 2,
+      "initial_concurrency": 1,
+      "max_concurrency": 2,
+      "ramp_up_per_window": 1,
+      "timeout_ms": 1000,
+      "strategy": "RULES",
+      "p95_limit_ms": 500,
+      "error_rate_limit": "0.10000",
+      "created_at": "2026-11-13T16:50:58.285685Z"
+    },
+    {
+      "id": "26ab6ff5-ec13-42ff-8014-a5e4915b3775",
+      "project_id": "074de410-7b71-493d-9861-ecec5a3388d0",
+      "endpoint_id": "e7cee186-1375-4926-b058-8f9ec6fffc8d",
+      "created_by": "91ecfec4-783d-4d8f-a354-246414ed1133",
+      "name": "RC IA híbrida",
+      "duration_seconds": 2,
+      "initial_concurrency": 1,
+      "max_concurrency": 2,
+      "ramp_up_per_window": 1,
+      "timeout_ms": 1000,
+      "strategy": "AI_HYBRID",
+      "p95_limit_ms": 500,
+      "error_rate_limit": "0.10000",
+      "created_at": "2026-11-13T16:51:04.992716Z"
+    }
+  ],
+  "execution_ids": [
+    "5d92a30f-1c16-4b1e-8658-a2d313a45320",
+    "7b7492ce-115e-49db-96cb-6061bb47e591",
+    "eb32980e-a2fd-41d1-8efb-63d0d4f83cc3",
+    "257ab0dc-9462-4f28-86fa-23cdfb49250b",
+    "27a6b400-f826-4e66-b3fc-37fd4218c4e6",
+    "b8f0582a-d2cf-42dd-a331-91b51c47dfda",
+    "cfb1ea6c-97cd-480f-9b72-371b10b25110",
+    "ee3e3e65-2baf-4dda-a410-40fae801f166",
+    "e70c1bc9-1e48-406f-8256-1aa996e90dc1"
+  ],
+  "comparison_id": "00a1042b-5dc4-47cc-af1a-d8b596b7b7a2",
+  "recovered_execution_id": "b586be0b-37cf-4475-bdef-7c85e880b734"
+}

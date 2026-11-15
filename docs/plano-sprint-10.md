@@ -23,6 +23,7 @@ estados e orientação da interface; atualizar instalação, operação e limite
 | `docs/s10-contratos-api` | OpenAPI, respostas, exemplos e exportação | Contrato reproduzível e documentado para todas as rotas |
 | `fix/s10-interface-final` | Estados, contexto, acesso e responsividade | Fluxos coerentes e regressões verificadas |
 | `docs/s10-guia-release-candidate` | README, operação e fechamento | Instruções reproduzíveis, versões e pendências explícitas |
+| `test/s10-isolamento-regressao` | Isolamento da infraestrutura de teste | Modelo sintético fora dos metadados da aplicação; temporários locais e esperas limitadas |
 
 As branches de tarefa partem da integração local e são incorporadas com merges
 explícitos; dependências e resultados ficam registrados no relatório. Commits

@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "migration_heads": [
+    "20261020_0007"
+  ],
+  "tables": 13,
+  "check_constraints": 33,
+  "issues": []
+}
