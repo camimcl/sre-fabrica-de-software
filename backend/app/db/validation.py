@@ -41,6 +41,13 @@ def validate_database(connection) -> dict:
         issues.append('Application table set differs from ORM metadata')
     differences = compare_metadata(context, Base.metadata)
     issues.extend(str(item) for item in differences)
+    # Alembic autogeneration does not reliably report primary-key removal.
+    for name, table in Base.metadata.tables.items():
+        if name in actual_tables:
+            expected_pk = [column.name for column in table.primary_key.columns]
+            actual_pk = inspector.get_pk_constraint(name)['constrained_columns'] or []
+            if actual_pk != expected_pk:
+                issues.append(f'Primary key differs: {name}; expected {expected_pk}, found {actual_pk}')
     for table, required in CHECKS.items():
         if table in actual_tables:
             present = {item['name'] for item in inspector.get_check_constraints(table)}

@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
 from app.db.validation import validate_database
@@ -30,17 +30,20 @@ def test_final_migrated_schema_matches_application(database):
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('change', ['constraint', 'index'])
+@pytest.mark.parametrize('change', ['constraint', 'index', 'primary_key'])
 def test_schema_validation_detects_drift_without_repairing_it(database, change):
     transaction = database.begin()
     try:
         if change == 'constraint':
             database.execute(text('ALTER TABLE test_executions DROP CONSTRAINT ck_execution_concurrency'))
-        else:
+        elif change == 'index':
             database.execute(text('DROP INDEX ix_executions_scenario_created'))
+        else:
+            database.execute(text('ALTER TABLE operation_logs DROP CONSTRAINT operation_logs_pkey'))
+            assert not inspect(database).get_pk_constraint('operation_logs')['constrained_columns']
         result = validate_database(database)
         assert not result['ok']
-        assert any('ck_execution_concurrency' in issue or 'ix_executions_scenario_created' in issue
+        assert any('ck_execution_concurrency' in issue or 'ix_executions_scenario_created' in issue or 'Primary key differs: operation_logs' in issue
                    for issue in result['issues'])
     finally:
         transaction.rollback()
