@@ -29,7 +29,7 @@ Autenticação: Bearer obrigatório.
 | 200 | Successful Response application/json |
 | 401 | Credenciais ausentes, inválidas ou expiradas. application/json |
 | 403 | Perfil ou propriedade sem permissão para a operação. application/json |
-| 422 | Validation Error application/json |
+| 422 | Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto). application/json |
 
 ## POST `/auth/login`
 
@@ -273,7 +273,7 @@ Autenticação: Bearer obrigatório.
 | 401 | Credenciais ausentes, inválidas ou expiradas. application/json |
 | 403 | Perfil ou propriedade sem permissão para a operação. application/json |
 | 404 | Recurso inexistente ou fora do contexto informado. application/json |
-| 422 | Validation Error application/json |
+| 422 | Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto). application/json |
 
 ## GET `/projects/{project_id}/endpoints`
 
@@ -411,7 +411,7 @@ Autenticação: Bearer obrigatório.
 | 401 | Credenciais ausentes, inválidas ou expiradas. application/json |
 | 403 | Perfil ou propriedade sem permissão para a operação. application/json |
 | 404 | Recurso inexistente ou fora do contexto informado. application/json |
-| 422 | Validation Error application/json |
+| 422 | Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto). application/json |
 
 ## GET `/projects/{project_id}/exports/executions.csv`
 
@@ -437,7 +437,7 @@ Autenticação: Bearer obrigatório.
 | 401 | Credenciais ausentes, inválidas ou expiradas. application/json |
 | 403 | Perfil ou propriedade sem permissão para a operação. application/json |
 | 404 | Recurso inexistente ou fora do contexto informado. application/json |
-| 422 | Validation Error application/json |
+| 422 | Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto). application/json |
 
 ## GET `/projects/{project_id}/reports/comparisons`
 
@@ -975,7 +975,7 @@ Autenticação: Bearer obrigatório.
 
 Pesquisar usuários
 
-Consulta autenticada no ambiente compartilhado. Os parâmetros, limites e schemas abaixo integram o contrato desta operação.
+Somente QA. Pesquisa usuários do ambiente compartilhado. Os parâmetros, limites e schemas abaixo integram o contrato desta operação.
 
 Autenticação: Bearer obrigatório.
 
