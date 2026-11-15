@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import get_engine
 from app.runtime import lifespan
+from app.api_documentation import install_openapi
 from app.modules.auth.api import router as auth_router
 from app.modules.intelligence.api import execution_router as intelligence_execution_router
 from app.modules.intelligence.api import router as intelligence_router
@@ -42,3 +43,6 @@ def ready() -> dict[str, str]:
     except (SQLAlchemyError, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
     return {"status": "ok", "database": "connected"}
+
+
+install_openapi(app)
