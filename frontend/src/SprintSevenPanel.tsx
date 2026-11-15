@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api } from './api'
+import { label } from './presentation'
 import { download } from './download'
 import { periodQuery, readableSummary } from './query'
 
@@ -190,7 +191,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
             <article><span>Erro médio</span><strong>{(dashboard.performance.avg_error_rate * 100).toFixed(1)}%</strong></article>
           </div>
           <div className="s7-charts">
-            <div><h3>Execuções por status</h3><BarChart data={statuses.map((s) => ({ label: s, value: dashboard.executions_by_status[s] ?? 0 }))} /></div>
+            <div><h3>Execuções por status</h3><BarChart data={statuses.map((s) => ({ label: label(s), value: dashboard.executions_by_status[s] ?? 0 }))} /></div>
             <div><h3>Execuções por estratégia</h3><BarChart data={strategies.map((s) => ({ label: strategyLabel[s], value: dashboard.executions_by_strategy[s] ?? 0 }))} /></div>
             <div className="s7-timeseries"><h3>Execuções por dia (UTC)</h3><Sparkline points={dashboard.timeseries_executions_per_day} /><ul className="helper">{dashboard.timeseries_executions_per_day.map((p) => <li key={p.day}>{p.day}: {p.count} execuções</li>)}</ul></div>
           </div>
@@ -200,16 +201,16 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
       {tab === 'queries' && (
         <div className="s7-queries">
           <div className="s7-controls">
-            <input placeholder="Buscar por cenário" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value) }} />
-            <select value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value as Status | '') }}><option value="">Status (todos)</option>{statuses.map((s) => <option key={s} value={s}>{s}</option>)}</select>
-            <select value={strategyFilter} onChange={(e) => { setPage(1); setStrategyFilter(e.target.value as Strategy | '') }}><option value="">Estratégia (todas)</option>{strategies.map((s) => <option key={s} value={s}>{strategyLabel[s]}</option>)}</select>
+            <input aria-label="Pesquisar por cenário" placeholder="Buscar por cenário" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value) }} />
+            <select aria-label="Filtrar por situação" value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value as Status | '') }}><option value="">Status (todos)</option>{statuses.map((s) => <option key={s} value={s}>{label(s)}</option>)}</select>
+            <select aria-label="Filtrar por estratégia" value={strategyFilter} onChange={(e) => { setPage(1); setStrategyFilter(e.target.value as Strategy | '') }}><option value="">Estratégia (todas)</option>{strategies.map((s) => <option key={s} value={s}>{strategyLabel[s]}</option>)}</select>
             <button disabled={!validRange} onClick={() => void loadExecutions()}>Atualizar consulta</button>
             <button disabled={!validRange} onClick={() => download(`/projects/${projectId}/exports/executions.csv?${queryString({ ...(search.trim() ? { search: search.trim() } : {}), ...(statusFilter ? { status: statusFilter } : {}), ...(strategyFilter ? { strategy: strategyFilter } : {}) })}`, token, 'executions.csv').catch(report)}>Exportar CSV</button>
           </div>
           <div className="history-list">
             {execPage?.items.map((row) => (
               <article key={row.id} className="history-item">
-                <span><strong>{row.strategy}</strong><small>{row.status} · {row.id.slice(0, 8)} · {new Date(row.created_at).toLocaleString('pt-BR')}</small></span>
+                <span><strong>{label(row.strategy)}</strong><small>{label(row.status)} · {row.id.slice(0, 8)} · {new Date(row.created_at).toLocaleString('pt-BR')}</small></span>
                 <button disabled={row.status === 'PENDING' || row.status === 'RUNNING'} title="O PDF exige um relatório gerado na área Relatórios." onClick={() => download(`/projects/${projectId}/scenarios/${row.scenario_id}/executions/${row.id}/report.pdf`, token, `execution-${row.id.slice(0, 8)}.pdf`).catch(report)}>PDF</button>
               </article>
             ))}
@@ -230,7 +231,7 @@ export default function SprintSevenPanel({ token, projectId, isQa, report }: Pro
             {logs?.items.map((entry) => (
               <article key={entry.id} className="history-item s7-log">
                 <button className="s7-log-head" onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}>
-                  <strong>{entry.action} · {entry.entity_type}</strong>
+                  <strong>{label(entry.action)} · {label(entry.entity_type)}</strong>
                   <small>{new Date(entry.created_at).toLocaleString('pt-BR')} · {entry.entity_id?.slice(0, 8) ?? '—'}</small>
                 </button>
                 {expanded === entry.id && <pre className="s7-log-summary">{readableSummary(entry.summary)}</pre>}
