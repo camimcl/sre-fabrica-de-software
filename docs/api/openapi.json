@@ -1854,11 +1854,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    },
+                    {
+                      "properties": {
+                        "detail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "detail"
+                      ],
+                      "type": "object"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto)."
           }
         },
         "security": [
@@ -3051,11 +3066,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    },
+                    {
+                      "properties": {
+                        "detail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "detail"
+                      ],
+                      "type": "object"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto)."
           }
         },
         "security": [
@@ -3886,11 +3916,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    },
+                    {
+                      "properties": {
+                        "detail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "detail"
+                      ],
+                      "type": "object"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto)."
           }
         },
         "security": [
@@ -4096,11 +4141,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    },
+                    {
+                      "properties": {
+                        "detail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "detail"
+                      ],
+                      "type": "object"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto)."
           }
         },
         "security": [
@@ -7185,7 +7245,7 @@
     },
     "/users": {
       "get": {
-        "description": "Consulta autenticada no ambiente compartilhado. Os parâmetros, limites e schemas abaixo integram o contrato desta operação.",
+        "description": "Somente QA. Pesquisa usuários do ambiente compartilhado. Os parâmetros, limites e schemas abaixo integram o contrato desta operação.",
         "operationId": "list_users_users_get",
         "parameters": [
           {

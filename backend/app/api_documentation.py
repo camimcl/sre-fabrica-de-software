@@ -35,6 +35,7 @@ CATALOG = {
 }
 
 DETAILS = {
+    'list_users': 'Somente QA. Pesquisa usuários do ambiente compartilhado.',
     'register': 'Cadastro público cria somente VIEWER. Perfil extra é rejeitado; senha exige ao menos 12 caracteres.',
     'login': 'Envia e-mail e senha. Retorna access_token e expires_in; use Authorization: Bearer <token> nas demais chamadas. O perfil é consultado no banco em cada requisição.',
     'update_user': 'Própria conta ou QA. Somente QA muda perfis. Não é permitido remover o último QA nem despromover o proprietário de projetos.',
@@ -90,6 +91,14 @@ def install_openapi(app):
                     else:
                         detail = 'QA proprietário. Valida escopo, campos e dependências; conflitos retornam 409.'
                 operation['description'] = detail + ' Os parâmetros, limites e schemas abaixo integram o contrato desta operação.'
+                if name in {'query_project_executions', 'project_dashboard', 'list_operation_logs', 'export_executions_csv'}:
+                    operation['responses']['422'] = {
+                        'description': 'Parâmetros inválidos (detail como lista) ou intervalo invertido (detail como texto).',
+                        'content': {'application/json': {'schema': {'anyOf': [
+                            {'$ref': '#/components/schemas/HTTPValidationError'},
+                            {'type': 'object', 'required': ['detail'], 'properties': {'detail': {'type': 'string'}}},
+                        ]}}},
+                    }
                 if name.startswith('export_'):
                     media = 'application/pdf' if name.endswith('_pdf') else 'text/csv'
                     operation['description'] += ' Retorna arquivo para download com Content-Disposition; utiliza dados persistidos e exige relatório já gerado quando aplicável.'
